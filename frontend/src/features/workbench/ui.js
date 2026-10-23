@@ -8,27 +8,7 @@ export function createWorkbenchUI({ onNavigate = () => {} } = {}) {
   const panel = $('tutor-window'), ball = $('tutor-toggle'), sidebar = $('sidebar-toggle');
   const uiKey = 'datastructure-agent:workbench-ui:v1';
   let open = false, returnFocus = ball, drag = null, cardsLoaded = false, cardsBusy = false;
-  let positionFrame = null, bounce = null;
-  function clearBounce() {
-    if (!bounce) return;
-    bounce.animation.cancel(); bounce.node.remove(); bounce = null;
-  }
-  function bounceBall() {
-    clearBounce();
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    // A visual copy stays visible above the opening panel without blocking its controls.
-    const rect = ball.getBoundingClientRect(), node = ball.cloneNode(true);
-    for (const attr of ['id', 'aria-expanded', 'aria-controls', 'aria-label', 'title']) node.removeAttribute(attr);
-    node.classList.add('tutor-ball-echo'); node.setAttribute('aria-hidden', 'true'); node.inert = true; node.tabIndex = -1;
-    Object.assign(node.style, { left: rect.left+'px', top: rect.top+'px', right: 'auto', bottom: 'auto', width: rect.width+'px', height: rect.height+'px', pointerEvents: 'none', zIndex: '46' });
-    document.body.append(node);
-    const animation = node.animate([
-      {transform:'scale(1)',offset:0}, {transform:'scale(.86)',offset:.22},
-      {transform:'scale(1.1)',offset:.54}, {transform:'scale(.97)',offset:.78}, {transform:'scale(1)',offset:1}
-    ], {duration:380,easing:'cubic-bezier(.22,.8,.35,1)'});
-    const current = {node,animation}; bounce = current;
-    animation.onfinish = animation.oncancel = () => { node.remove(); if (bounce === current) bounce = null; };
-  }
+  let positionFrame = null;
   function queuePosition() {
     if (positionFrame !== null) return;
     positionFrame = requestAnimationFrame(() => {
@@ -84,7 +64,6 @@ export function createWorkbenchUI({ onNavigate = () => {} } = {}) {
     if (!Object.hasOwn(pages,name)) name = 'workbench';
     if (location.hash !== '#'+name) history[replace ? 'replaceState' : 'pushState'](null,'','#'+name);
     if (currentPage === name) return;
-    clearBounce();
     document.querySelector('.vizwin[data-full="true"] [data-viz-full]')?.click();
     onNavigate(name);
     if (open) show(false, false);
@@ -122,7 +101,7 @@ export function createWorkbenchUI({ onNavigate = () => {} } = {}) {
       clampPosition(); $('tutor-close').focus({ preventScroll: true });
     } else if (restoreFocus) returnFocus.focus({ preventScroll: true });
   }
-  listen(ball, 'click', () => { returnFocus = ball; show(!open); bounceBall(); });
+  listen(ball, 'click', () => { returnFocus = ball; show(!open); });
   listen($('tutor-close'), 'click', () => show(false));
   // Dismiss without consuming the click or moving focus away from the outside control.
   listen(document, 'pointerdown', event => {
@@ -161,6 +140,6 @@ export function createWorkbenchUI({ onNavigate = () => {} } = {}) {
   return {
     navigate,
     setContext(context) { $('tutor-prompt').textContent = prompts[context?.step?.event] || prompts.init; queuePosition(); },
-    destroy() { clearBounce(); lifetime.abort(); layoutObserver.disconnect(); if (positionFrame !== null) cancelAnimationFrame(positionFrame); }
+    destroy() { lifetime.abort(); layoutObserver.disconnect(); if (positionFrame !== null) cancelAnimationFrame(positionFrame); }
   };
 }

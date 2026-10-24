@@ -14,4 +14,8 @@
 
 历史附件链接保留（原有链接，未在本轮重新核验内容，不能直接当成本轮生产录屏）：
 
-[原录屏附件](https://github.com/user-attachments/assets/2c126668-f1c3-417b-9855-c1a3110d1f68)
+
+
+https://github.com/user-attachments/assets/aa9c91c2-37e9-41f8-bfa1-7b74c267dc9d
+
+

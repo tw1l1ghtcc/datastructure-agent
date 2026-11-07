@@ -11,7 +11,7 @@
 | 05 |林为峰  | 102301230 |Aidname  | B · [图算法与并查集](tasks/b-graphs-engine.md) |
 | 06 | 秦文贵 | 102401615 | vg666-NiKo | C · [多路归并、外部排序与多路查找树](tasks/c-external-multiway.md) |
 | 07 | 吴圣洲 | 102401622 | drkalerq | D · [查找与哈希](tasks/d-search-hash.md) |
-| 08 |  |  |  | E · [线性表与数组算法](tasks/e-linear-array.md) |
+| 08 | 蒋书瑞 | 162501110 | jsr806 | E · [线性表与数组算法](tasks/e-linear-array.md) |
 | 09 |  |  |  | F · [字符串、栈与有向无环图应用](tasks/f-string-stack-dag.md) |
 | 10 | 乔震宇 | 102401435 | 1530017982 | G · [二叉树、树与森林](tasks/g-trees-design.md) |
 

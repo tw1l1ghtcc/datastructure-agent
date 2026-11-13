@@ -11,7 +11,7 @@
 | 03 | — | PPT、团队博客、演示与课程材料 | 待记录 | — | — |
 | 04 | A | 直接插入排序 | 已分配 | — | — |
 | 05 | B | 8 项：BFS、DFS、Prim、Kruskal、Dijkstra、Floyd、拓扑排序、并查集（15 分） | 8 项算法已合并；7 项接入工作台预览 | [#49](https://github.com/tw1l1ghtcc/datastructure-agent/pull/49)、[#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53) | #49 验收记录；正式图动画待联调，并查集工作台入口待接入 |
-| 06 | C | 最佳归并树（首个代表项） | 已登记负责人，待算法交付 | [#51](https://github.com/tw1l1ghtcc/datastructure-agent/pull/51) | 登记已合并 |
+| 06 | C | 5项：最佳归并树（首项）、多路平衡归并、置换选择、B树、B+树（14分） | 本地实现及自测完成；待实现PR、01/02联调 | [#51](https://github.com/tw1l1ghtcc/datastructure-agent/pull/51)（仅登记；实现PR待提交） | [接口与预览](../../../shared/algorithms/final/c/README.md)、[自测及交接](c-validation.md)；14项专项通过，主工作台接入待办 |
 | 07 | D | 8 项：顺序查找、分块查找、AVL 树、红黑树、哈希线性探测、平方探测、双散列、拉链法（14 分） | 8 项算法已合并；2 项接入工作台 | [#50](https://github.com/tw1l1ghtcc/datastructure-agent/pull/50)、[#52](https://github.com/tw1l1ghtcc/datastructure-agent/pull/52)、[#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53) | D 包 9 项专项测试通过；顺序查找和分块查找已接入。AVL、红黑树和四种哈希的工作台入口与视图待接入 |
 | 08 | E | 单链表插入 | 已分配 | — | — |
 | 09 | F | KMP | 已分配 | — | — |

@@ -37,9 +37,8 @@ function matrixTables(step, columnCounts) {
 }
 
 function radixTables(step) {
-  const { cnt, exp, tmp } = step.variables;
+  const { tmp } = step.variables;
   const views = [indexedTable(step.done ? '排序结果' : '当前数组', step.array)];
-  if (cnt) views.push(table('位权 ' + exp + ' 的计数表', ['数位', '计数'], cnt.map((value, index) => [index, value])));
   if (tmp) views.push(indexedTable('本轮回填', tmp));
   return views;
 }

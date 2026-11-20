@@ -115,6 +115,14 @@ try {
     }
     await page.click('#nextBtn');
     await assertStep(page, run, 1);
+    if (algorithm === 'radix-sort') {
+      const countIndex = run.steps.findIndex(step => step.event === 'count-digit');
+      assert.ok(countIndex > 1);
+      for (let index = 1; index < countIndex; index++) await page.click('#nextBtn');
+      await assertStep(page, run, countIndex);
+      assert.deepEqual(await cells(page, 'e-buckets'), run.steps[countIndex].variables.cnt.map(String));
+      assert.equal(await page.locator('.e-state-tables caption', { hasText: /位权.*计数表/ }).count(), 0);
+    }
     if (algorithm === 'array-list-reverse') {
       const svg = layer(page, 'e-array');
       for (const [index, label] of [[0, 'i · 0'], [4, 'j · 4']]) {

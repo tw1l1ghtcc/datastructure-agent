@@ -11,12 +11,12 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   windowsHide: true,
 });
 const cases = [
-  { id: 'bracket-matching', result: true, field: 'matched', caption: /括号栈/ },
+  { id: 'bracket-matching', result: true, field: 'matched', caption: /括号栈/, conclusion: /括号全部匹配/ },
   { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], caption: /后缀序列/ },
-  { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/ },
+  { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/, conclusion: /表达式结果为 -8/ },
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
   { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
-  { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/ },
+  { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/, conclusion: /根节点结果为 25/ },
   { id: 'critical-path', result: 5, field: 'duration', caption: /关键路径/ },
 ];
 
@@ -93,7 +93,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base);
   for (const item of cases) {
-    const { id, mode, field, result, caption } = item;
+    const { id, mode, field, result, caption, conclusion } = item;
     await selectWorkbenchAlgorithm(page, id);
     if (mode) await page.selectOption('#f-mode', mode);
     await page.click('#fillDemo');
@@ -110,6 +110,9 @@ try {
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
     assert.match(await page.locator('.c-state-tables').innerText(), caption, id);
+    const resultTable = page.locator('.c-state-tables caption', { hasText: '运行结果' });
+    assert.equal(await resultTable.count(), conclusion ? 0 : 1, id);
+    if (conclusion) assert.match(await page.locator('[data-explain-host] .bsviz-caption').textContent(), conclusion, id);
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
     await assertStep(page, run, index);

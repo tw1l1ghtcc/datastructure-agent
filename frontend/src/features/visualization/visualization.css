@@ -492,13 +492,14 @@
   max-height: none;
   padding: 0 8px 8px;
   border-right: 1px solid var(--bl-line);
-  background: #f8faff;
+  background: var(--bl-panel);
 }
 .b-animation-forest .uf-table { table-layout: fixed; }
+.b-animation-forest .uf-table :is(th, td) { border-color: var(--bl-line); }
 .b-animation-forest .uf-table th {
   position: sticky;
   top: 0;
-  background: #eef2fa;
+  background: var(--bl-head);
 }
 .b-animation-forest .uf-table th:last-child { width: 20%; }
 .b-forest-viewport {

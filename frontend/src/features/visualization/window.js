@@ -9,6 +9,8 @@ import { createGStateTable } from './g-state-table.js';
 import { createLevelOrderTable } from './level-order-table.js';
 import { dataAlgorithm as cAlgorithm } from '../workbench/data-algorithms.js';
 import { createCStateTable } from './c-state-table.js';
+import { fAlgorithm } from '../workbench/f-algorithms.js';
+import { createFStateTable } from './f-state-table.js';
 import { createUnionFindTable } from './union-find-table.js';
 import { createVisualization } from './index.js';
 import { arraySearch } from '../workbench/array-search.js';
@@ -89,9 +91,10 @@ export function createVizWindow(host, {
   root.className = 'win vizwin';
   root.dataset.win = 'viz';
   const c = cAlgorithm(algorithm);
+  const f = fAlgorithm(algorithm);
   const g = gAlgorithm(algorithm);
   const levelOrder = algorithm === 'binary-tree-level-order';
-  const scrollableTreeTable = g && !levelOrder;
+  const scrollableTreeTable = f || (g && !levelOrder);
   const unionFind = algorithm === 'union-find';
   /* 合并（PR #66 §1）：主分支把"排序"扩成 8 种，我们的 plus 示例也要用同一套窗口 */
   const sorting = SORT_ALGORITHMS.includes(algorithm);
@@ -446,7 +449,8 @@ export function createVizWindow(host, {
       graphExplanation = createExplanationPanel();
       explainHost.replaceChildren(graphExplanation.explain);
     } else if (c) {
-      cStateTable=dAlgorithm(algorithm) ? createDStateTable(c) : createCStateTable(c);
+      cStateTable = f ? createFStateTable(f, algorithm, nextRun.input)
+        : dAlgorithm(algorithm) ? createDStateTable(c) : createCStateTable(c);
       scene.append(cStateTable.element);
       graphExplanation=createExplanationPanel();
       explainHost.replaceChildren(graphExplanation.explain);

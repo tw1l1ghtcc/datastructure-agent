@@ -102,8 +102,8 @@ export function buildArrayFrame(input, opts = {}) {
     : Math.max(26, Math.min(56, Math.floor(640 / count)));
   const width = opts.width || (padLeft + spacing * count + 18);
   const height = opts.height || 202;
-  const top = 64;
   const bottom = height - 44;
+  const top = opts.height ? Math.min(80, bottom - 15) : 64;
 
   const min = Math.min(0, ...st.array);
   const max = Math.max(0, ...st.array);

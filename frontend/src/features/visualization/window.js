@@ -116,7 +116,8 @@ export function createVizWindow(host, {
   const custom = algorithm === 'custom-array';
   const graph = graphAlgorithm(algorithm);
   const heapSort = algorithm === 'heap-sort';
-  const fullCanvas = Boolean(graph || unionFind || heapSort);
+  const splitSort = heapSort || algorithm === 'merge-sort';
+  const fullCanvas = Boolean(graph || unionFind || splitSort);
   const tableLabel = graphTableLabel(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
@@ -167,16 +168,17 @@ export function createVizWindow(host, {
       'selection-sort': '简单选择排序', 'quick-sort': '快速排序', 'heap-sort': '堆排序', 'merge-sort': '归并排序'
     };
     const sortName = sortNames[algorithm] || '排序';
-    const sortView = heapSort ? '堆树与柱状图' : algorithm === 'merge-sort' ? '数组与临时区' : '数组视图';
+    const auxiliaryTitle = heapSort ? '堆树' : '临时数组';
+    const sortView = splitSort ? auxiliaryTitle + '与柱状图' : '数组视图';
     root.querySelector('.win-sub').textContent = sortName + ' · ' + sortView;
     root.querySelector('.vh-title').textContent = sortView;
     root.querySelector('.vh-sub').textContent = `${sortName} · 升序`;
     const legend = root.querySelector('.viewport-legend');
     legend.setAttribute('aria-label', '排序图例');
     legend.innerHTML = '<span><b class="legend-mid">绿</b> 已就位/最终位置</span><span><b class="legend-right">橙</b> 比较/操作</span>';
-    if (heapSort) {
-      root.dataset.heapView = 'true';
-      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧堆树，右侧排序柱状图');
+    if (splitSort) {
+      root.dataset.sortView = 'split';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧' + auxiliaryTitle + '，右侧排序柱状图');
     }
   }
   
@@ -265,7 +267,7 @@ export function createVizWindow(host, {
   let panning = false;
   let panStart = { x: 0, y: 0 };
   body.addEventListener('pointerdown', (event) => {
-    if (traceView || event.button !== 0 || event.target.closest?.('button, select, input, .bsviz-explain, .b-animation-data')) return;
+    if (traceView || event.button !== 0 || event.target.closest?.('button, select, input, .bsviz-explain, .b-animation-data, .a-merge-track')) return;
     if (!cameraViewport()?.contains(event.target)) return;
     body.focus({preventScroll:true});
     panning = true;

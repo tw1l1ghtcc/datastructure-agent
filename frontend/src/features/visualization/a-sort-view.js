@@ -1,6 +1,6 @@
 import { asFrameBuilder } from '../../../vendor/plus/app/host-frame.js';
 import { createStage } from '../../../vendor/plus/app/svg-stage.js';
-import { arrayLayer, heapLayer } from '../../../vendor/plus/vendor/engine/model.js';
+import { heapLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { aSortDetail, aSortMarks, activeHeapSize } from './a-sort-state.js';
 import { createVisualization } from './index.js';
 
@@ -23,26 +23,68 @@ function buildASortFrame(step, options) {
   return frame;
 }
 
-function layersFor(step) {
-  if (!step) return [];
-  if (step.algorithm === 'heap-sort') {
-    const size = activeHeapSize(step);
-    return [heapLayer({
-      id: 'a-heap', title: '有效堆',
-      name: (step.event === 'init' && size ? '待建堆' : '有效堆') + ' · ' + size + ' 个结点',
-      tree: step.array.slice(0, size),
-      props: { fitTree: true },
-      roles: { focus1: aSortMarks(step).focus.filter(index => index < size) },
-    })];
-  }
+function heapFrame(step) {
+  const size = activeHeapSize(step);
+  return heapLayer({
+    id: 'a-heap', title: '有效堆',
+    name: (step.event === 'init' && size ? '待建堆' : '有效堆') + ' · ' + size + ' 个结点',
+    tree: step.array.slice(0, size),
+    props: { fitTree: true },
+    roles: { focus1: aSortMarks(step).focus.filter(index => index < size) },
+  });
+}
 
-  const { temp, p } = step.variables;
-  const readOrWrite = step.event === 'pick' ? temp.length - 1 : step.event === 'copy' ? p - 1 : null;
-  return [arrayLayer({
-    id: 'a-merge-temp', title: '归并临时数组',
-    name: temp.length ? 'temp[]' : '临时数组为空',
-    values: temp, roles: { focus1: readOrWrite === null ? [] : [readOrWrite] },
-  })];
+function createMergeTemp() {
+  const element = document.createElement('div');
+  element.className = 'bsviz a-merge-temp';
+  const title = document.createElement('p');
+  title.className = 'a-merge-title';
+  title.textContent = '临时数组 temp[]';
+  const track = document.createElement('div');
+  track.className = 'a-merge-track';
+  track.tabIndex = 0;
+  track.setAttribute('role', 'region');
+  track.setAttribute('aria-label', '归并临时数组');
+  const row = document.createElement('div');
+  row.className = 'a-merge-cells';
+  track.append(row);
+  element.append(title, track);
+
+  return {
+    element,
+    showStep(step) {
+      const { temp = [], p } = step?.variables ?? {};
+      if (!temp.length) {
+        const empty = document.createElement('div');
+        empty.className = 'bsviz-empty';
+        empty.textContent = '临时数组为空';
+        row.replaceChildren(empty);
+        return;
+      }
+      const focus = step.event === 'pick' ? temp.length - 1 : step.event === 'copy' ? p - 1 : null;
+      const cells = temp.map((value, index) => {
+        const cell = document.createElement('div');
+        cell.className = 'bsviz-cell';
+        cell.classList.toggle('is-comparing', index === focus);
+        const label = document.createElement('div');
+        label.className = 'bsviz-value';
+        label.textContent = value;
+        const position = document.createElement('div');
+        position.className = 'bsviz-idx';
+        position.textContent = index;
+        cell.append(label, position);
+        return cell;
+      });
+      row.replaceChildren(...cells);
+      const active = cells[focus];
+      if (active) {
+        const left = active.offsetLeft;
+        const right = left + active.offsetWidth;
+        if (left < track.scrollLeft) track.scrollLeft = left;
+        else if (right > track.scrollLeft + track.clientWidth) track.scrollLeft = right - track.clientWidth;
+      }
+    },
+  };
 }
 
 function fitHeapLabels(auxiliary) {
@@ -66,53 +108,54 @@ function fitHeapLabels(auxiliary) {
 
 export function createASortVisualization(host, run, explainContainer) {
   const heap = run.algorithm === 'heap-sort';
+  const merge = run.algorithm === 'merge-sort';
+  const split = heap || merge;
   const root = document.createElement('div');
   root.className = 'a-sort-view';
-  root.classList.toggle('a-heap-view', heap);
+  root.classList.toggle('a-sort-split', split);
   root.dataset.vizEngine = 'plus-sort';
   host.append(root);
-  const chart = heap ? document.createElement('div') : root;
-  if (heap) {
-    chart.className = 'a-heap-chart';
+  const chart = split ? document.createElement('div') : root;
+  if (split) {
+    chart.className = 'a-sort-chart';
     root.append(chart);
   }
   const view = createVisualization(chart, {
     run, explainContainer,
-    frameBuilder: heap ? (step, options) => buildASortFrame(step, {
+    frameBuilder: split ? (step, options) => buildASortFrame(step, {
       ...options,
       width: Math.max(84, chart.clientWidth),
       height: Math.max(112, chart.clientHeight),
     }) : buildASortFrame,
   });
 
-  const detail = heap ? null : document.createElement('p');
+  const detail = split ? null : document.createElement('p');
   if (detail) {
     detail.className = 'a-sort-detail';
     root.prepend(detail);
   }
-  const auxiliary = heap || run.algorithm === 'merge-sort' ? document.createElement('div') : null;
-  let stage;
-  if (auxiliary) {
-    auxiliary.className = 'plus-viz a-sort-auxiliary';
-    auxiliary.dataset.sortLayer = heap ? 'heap' : 'temp';
-    if (heap) root.prepend(auxiliary);
-    else root.append(auxiliary);
-    stage = createStage(auxiliary, { fillViewport: heap });
+  const heapPane = heap ? document.createElement('div') : null;
+  const temp = merge ? createMergeTemp() : null;
+  if (heapPane) {
+    heapPane.className = 'plus-viz a-sort-auxiliary';
+    heapPane.dataset.sortLayer = 'heap';
+    root.prepend(heapPane);
   }
+  if (temp) root.prepend(temp.element);
+  const stage = heapPane ? createStage(heapPane, { fillViewport: true }) : null;
 
   function renderExtras(step, options) {
     if (detail) detail.textContent = aSortDetail(step);
+    temp?.showStep(step);
     if (!stage) return;
-    stage.render(layersFor(step), options);
-    if (heap) {
-      const tree = auxiliary.querySelector('[data-layer="a-heap"]');
-      tree?.setAttribute('role', 'img');
-      tree?.setAttribute('aria-label', '有效堆树');
-      fitHeapLabels(auxiliary);
-    }
+    stage.render(step ? [heapFrame(step)] : [], options);
+    const svg = heapPane.querySelector('svg');
+    svg?.setAttribute('role', 'img');
+    svg?.setAttribute('aria-label', '有效堆树');
+    fitHeapLabels(heapPane);
   }
   renderExtras(view.getStep());
-  const observer = heap ? new ResizeObserver(() => {
+  const observer = split ? new ResizeObserver(() => {
     const step = view.getStep();
     if (!step) return;
     view.showStep(step);

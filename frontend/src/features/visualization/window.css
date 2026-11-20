@@ -84,6 +84,14 @@
 .vizwin[data-trace-split] .viewport-legend { margin: 4px 14px 10px; }
 .vizwin .legend-related { background: #fdeff8; color: #8b1570; }
 .trace-animation-stage .canvas-card header span { display: none; }
+.vizwin:has(.f-bracket-animation) .viewport-scene { width: 100%; }
+.f-bracket-animation { display: grid; gap: 14px; }
+.f-bracket-row { min-width: 0; border: 1px solid var(--bl-line); border-radius: 8px; }
+.f-bracket-row h3 { margin: 0; padding: 9px 13px; border-bottom: 1px solid var(--bl-line); font-size: 13px; }
+.f-bracket-track { overflow-x: auto; }
+.f-bracket-track:focus-visible { outline: 2px solid var(--bl-accent); outline-offset: -2px; }
+.f-bracket-canvas { height: 112px; }
+.f-bracket-empty { margin: 0; padding: 0 16px; color: var(--bl-text-dim); line-height: 112px; }
 .vizwin[data-trace-animation] :is(.c-state-tables, .e-state-tables, .level-order-tables) { max-width: 580px; }
 .vizwin[data-trace-animation] :is(.c-state-tables, .e-state-tables, .level-order-tables) :is(th, td) { overflow-wrap: anywhere; }
 @media (max-width: 760px) {

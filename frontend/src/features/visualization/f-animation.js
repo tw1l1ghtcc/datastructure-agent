@@ -1,4 +1,5 @@
 import { graphLayer, gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
+import { createBracketAnimation } from './f-bracket-animation.js';
 import { createFStateTable } from './f-state-table.js';
 import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 
@@ -10,15 +11,6 @@ const nodeId = index => 'f' + index;
 function tail(id, title, values, markTop = false) {
   return sequenceLayer(id, title, values, { focus2: markTop ? [values.length - 1] : [] },
     { first: Math.max(0, values.length - WINDOW_SIZE) });
-}
-
-function bracketFrame(chars, step) {
-  const { i, stack } = step.variables;
-  const role = step.done && !step.result.matched ? 'swap' : 'focus1';
-  return [
-    sequenceLayer('f-text', '字符序列', chars, { [role]: [i] }),
-    tail('f-brackets', '括号栈（栈顶在右）', stack.map(item => item.char), true),
-  ];
 }
 
 function expressionStacks(v) {
@@ -174,9 +166,9 @@ function criticalPathFrames(input) {
 export function createFAnimation(host, explainHost, run, config) {
   const input = run.input;
   const text = Array.from(input.text ?? '', showChar);
+  if (run.algorithm === 'bracket-matching') return createBracketAnimation(host, explainHost, run, config, text);
   const pattern = Array.from(input.pattern ?? '', showChar);
   const frames = {
-    'bracket-matching': step => bracketFrame(text, step),
     'infix-to-postfix': step => expressionStacks(step.variables),
     'expression-evaluation': step => [
       tail('f-operands', '操作数栈（栈顶在右）', step.variables.stack, true),

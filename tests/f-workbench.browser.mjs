@@ -11,7 +11,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   windowsHide: true,
 });
 const cases = [
-  { id: 'bracket-matching', result: true, field: 'matched', caption: /括号栈/, conclusion: /括号全部匹配/ },
+  { id: 'bracket-matching', result: true, field: 'matched', conclusion: /括号全部匹配/ },
   { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], caption: /后缀序列/ },
   { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/, conclusion: /表达式结果为 -8/ },
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
@@ -30,7 +30,9 @@ async function assertAnimation(page, run, step) {
   assert.doesNotMatch((await stage.allTextContents()).join(' '), /渲染失败|undefined|NaN/);
   const v = step.variables;
   if (step.algorithm === 'bracket-matching') {
-    assert.deepEqual(await cells(page, 'brackets'), v.stack.slice(-10).map(item => item.char));
+    assert.deepEqual(await cells(page, 'brackets'), v.stack.map(item => item.char));
+    assert.deepEqual(await layer(page, 'brackets').locator('[data-avc-key^="idx-"]').allTextContents(),
+      v.stack.map(item => String(item.i)));
   }
   if (v.operators) {
     assert.deepEqual(await cells(page, 'operators'), v.operators.slice(-10).map(token => token.text));
@@ -113,7 +115,8 @@ try {
     await assertStep(page, run, 1);
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
-    assert.match(await stateTables.innerText(), caption, id);
+    if (caption) assert.match(await stateTables.innerText(), caption, id);
+    else assert.equal(await stateTables.count(), 0, id);
     assert.equal(await stateTables.locator('caption', { hasText: '运行结果' }).count(), 0, id);
     if (conclusion) assert.match(await explanation.locator('.bsviz-caption').textContent(), conclusion, id);
     if (id === 'infix-to-postfix') {
@@ -138,6 +141,37 @@ try {
     assert.deepEqual(stepRefs[0].variables, run.steps[index].variables);
     await page.click('#resetBtn');
     await assertStep(page, run, 0);
+    if (id === 'bracket-matching') {
+      await page.click('#c-edit');
+      const text = '😀\t(a' + '['.repeat(116);
+      await page.fill('#c-data', text);
+      const pending = page.waitForResponse(other => other.url().endsWith('/api/algorithms/bracket-matching/runs'));
+      await page.click('#startBtn');
+      const long = await (await pending).json();
+      assert.deepEqual(long.result, { matched: false, index: 119, reason: 'unclosed' });
+      await page.click('[data-t="last"]');
+      await assertStep(page, long, long.steps.length - 1);
+      assert.deepEqual(await cells(page, 'text'), ['😀', '制表符', '(', 'a', ...Array(116).fill('[')]);
+      const source = layer(page, 'text');
+      const brackets = layer(page, 'brackets');
+      assert.equal(await source.locator('[data-avc-key="idx-119"]').textContent(), '119');
+      assert.equal(await brackets.locator('[data-avc-key="idx-0"]').textContent(), '2');
+      assert.equal(await brackets.locator('[data-avc-key="idx-116"]').textContent(), '119');
+      for (const cell of [source.locator('[data-avc-key="g-119"] rect'), brackets.locator('[data-avc-key="g-116"] rect')]) {
+        const bounds = await cell.evaluate(rect => {
+          const track = rect.closest('.f-bracket-track');
+          const { left, right } = rect.getBoundingClientRect();
+          const viewLeft = track.getBoundingClientRect().left;
+          return { left, right, viewLeft, viewRight: viewLeft + track.clientWidth, scroll: track.scrollLeft };
+        });
+        assert.ok(bounds.scroll > 0 && bounds.left >= bounds.viewLeft && bounds.right <= bounds.viewRight + 1, JSON.stringify(bounds));
+      }
+      assert.match(await explanation.locator('.bsviz-caption').textContent(), /左括号尚未闭合/);
+      await page.click('#resetBtn');
+      await assertStep(page, long, 0);
+      assert.equal(await source.evaluate(svg => svg.closest('.f-bracket-track').scrollLeft), 0);
+      assert.ok(await page.getByText('栈为空', { exact: true }).isVisible());
+    }
     console.log(id + ' · Plus 动画、状态表、源码、步骤查询、单步回退、重置和 Mock 问答通过');
   }
   await page.click('#c-edit');

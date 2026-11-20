@@ -37,10 +37,6 @@ export function createDStateTable(config){
         ['路径',v.path],['旋转类型',v.rotation],['失衡节点',v.unbalancedAt],['修复情形',v.fixupCase]
       ]));
     }
-    if(step.done && v.phase==='search'){
-      const found=step.event==='found';
-      views.push(table('查询结果',['查询键','结果','位置或命中键'],[[v.key,found?'命中':'未命中',found?v.searchResult:'—']]));
-    }
     element.replaceChildren(...views);
   }};
 }

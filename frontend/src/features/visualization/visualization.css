@@ -491,7 +491,6 @@
   min-width: 0;
   max-height: none;
   padding: 0 8px 8px;
-  border-right: 1px solid var(--bl-line);
   background: var(--bl-panel);
 }
 .b-animation-forest .uf-table { table-layout: fixed; }

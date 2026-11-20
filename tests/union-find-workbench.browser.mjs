@@ -68,18 +68,20 @@ try {
     edges.map(edge => edge.dataset.avcKey).sort());
   await forest.waitFor();
   await assertSplitLayout(page);
-  const colors = await page.locator('.b-animation-forest .b-animation-data').evaluate(pane => {
+  const tableAppearance = await page.locator('.b-animation-forest .b-animation-data').evaluate(pane => {
     const win = pane.closest('.vizwin');
     const canvas = getComputedStyle(win.querySelector('[data-viz-body]'));
     const winBar = getComputedStyle(win.querySelector('.win-bar'));
     const table = getComputedStyle(pane);
     const header = getComputedStyle(pane.querySelector('thead th'));
     return {
-      table: [table.backgroundColor, header.backgroundColor, table.borderRightColor, header.borderBottomColor],
-      theme: [canvas.backgroundColor, getComputedStyle(win).backgroundColor, winBar.borderBottomColor, winBar.borderBottomColor]
+      tableColors: [table.backgroundColor, header.backgroundColor, header.borderBottomColor],
+      themeColors: [canvas.backgroundColor, getComputedStyle(win).backgroundColor, winBar.borderBottomColor],
+      dividerWidth: table.borderRightWidth
     };
   });
-  assert.deepEqual(colors.table, colors.theme, '表格使用工作台的底色、表头色和分隔线');
+  assert.deepEqual(tableAppearance.tableColors, tableAppearance.themeColors, '表格使用工作台的配色');
+  assert.equal(tableAppearance.dividerWidth, '0px', '表格和画布之间不显示竖线');
   assert.deepEqual(await links(), []);
   assert.equal(await rows.count(), 4);
   await page.click('[data-t="last"]');

@@ -232,7 +232,7 @@ export function passHeader(c, rect) {
  *   · **没有任何边的结点**（孤立/临时结点）也参与排布（否则会全叠在画布中心一点）。
  * 边 / 边标签 / 徽标 / 结点值文字全部跟着重算。
  */
-export function passTidy(c, rect) {
+export function passTidy(c, rect, layer) {
   const P = c.profile.policy;
   const T = P.tidy;
   const ids = c.ids;
@@ -271,10 +271,14 @@ export function passTidy(c, rect) {
   const spanMin = Math.min(...xs.values());
   const spanMax = Math.max(...xs.values());
   const span = spanMax - spanMin;
-  const levelGap = Math.min(T.levelGap.max, Math.max(T.levelGap.min, (rect.h - T.levelGap.pad) / Math.max(1, maxDepth)));
-  const y0 = rect.y + T.top;
+  const fitViewport = layer?.props?.fitViewport;
+  const levelLimit = fitViewport ? 170 : T.levelGap.max;
+  const levelPad = fitViewport ? Math.max(110, 2 * maxR + 42) : T.levelGap.pad;
+  const levelGap = Math.min(levelLimit, Math.max(T.levelGap.min, (rect.h - levelPad) / Math.max(1, maxDepth)));
+  const y0 = fitViewport ? rect.y + (rect.h - maxDepth * levelGap) / 2 : rect.y + T.top;
   const availW = rect.w - 2 * (maxR + T.sideRoom);
-  const gapX = Math.min(T.gapX.max, Math.max(T.gapX.min, span > 0 ? availW / span : T.gapX.max));
+  const gapLimit = fitViewport ? Math.max(T.gapX.max, Math.min(230, levelGap * 1.55)) : T.gapX.max;
+  const gapX = Math.min(gapLimit, Math.max(T.gapX.min, span > 0 ? availW / span : gapLimit));
 
   const pos = new Map();
   for (const id of ids) pos.set(id, { x: xs.get(id) * gapX, y: y0 + (depth.get(id) || 0) * levelGap });

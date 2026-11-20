@@ -4,7 +4,7 @@
 
 import { dAlgorithm } from '../workbench/d-algorithms.js';
 import { createDAnimation } from './d-animation.js';
-import { gAlgorithm } from '../workbench/g-algorithms.js';
+import { gAlgorithm, isBinaryTraversal } from '../workbench/g-algorithms.js';
 import { createGAnimation } from './g-animation.js';
 import { eAlgorithm } from '../workbench/e-algorithms.js';
 import { createEAnimation, fullECanvasLabels } from './e-animation.js';
@@ -97,6 +97,7 @@ export function createVizWindow(host, {
   const d = dAlgorithm(algorithm);
   const traceView = e ?? f ?? g ?? c ?? d;
   const traceCanvasLabels = fullECanvasLabels(algorithm);
+  const binaryTraversal = isBinaryTraversal(algorithm);
   const scrollTrace = traceView && !traceCanvasLabels;
   const unionFind = algorithm === 'union-find';
   /* 合并（PR #66 §1）：主分支把"排序"扩成 8 种，我们的 plus 示例也要用同一套窗口 */
@@ -137,6 +138,17 @@ export function createVizWindow(host, {
       root.dataset.traceCanvas = 'true';
       root.querySelector('.vh-title').textContent = title;
       root.querySelector('[data-viz-body]').setAttribute('aria-label', label);
+    } else if (binaryTraversal) {
+      root.dataset.traceCanvas = 'true';
+      root.dataset.traceSplit = 'true';
+      root.querySelector('.vh-title').textContent = '二叉树与遍历状态';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧遍历状态，右侧二叉树');
+      root.querySelector('[data-viz-view-reset]').hidden = true;
+      root.querySelector('.viewport-hint').hidden = true;
+      const legend = root.querySelector('.viewport-legend');
+      legend.hidden = false;
+      legend.setAttribute('aria-label', '遍历图例');
+      legend.innerHTML = '<span><b class="legend-right">橙</b> 当前节点</span><span><b class="legend-mid">绿</b> 已访问</span><span><b class="legend-related">紫</b> 本步关联节点</span>';
     } else {
       root.dataset.traceAnimation = 'true';
       root.dataset.tableView = 'true';

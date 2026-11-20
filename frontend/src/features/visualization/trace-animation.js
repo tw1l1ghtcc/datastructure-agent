@@ -3,6 +3,8 @@ import { gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createExplanationPanel } from './explanation-panel.js';
 import { describeStructuredStep } from './structured-explanation.js';
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
 export function windowStart(length, size, focus = 0) {
   return Math.max(0, Math.min(focus - Math.floor(size / 2), length - size));
 }
@@ -35,10 +37,29 @@ export function createTraceAnimation(host, explainHost, stateTable, frameFor, pa
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-' + packageId;
   element.classList.toggle('trace-animation-full', fillViewport);
+  const split = fillViewport && stateTable;
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz trace-animation-stage';
-  element.append(canvas);
-  if (stateTable) element.append(stateTable.element);
+  let viewport = canvas;
+  if (split) {
+    element.classList.add('trace-animation-split');
+    const state = document.createElement('div');
+    state.className = 'trace-animation-state';
+    state.setAttribute('role', 'region');
+    state.setAttribute('aria-label', '遍历状态');
+    state.tabIndex = 0;
+    state.append(stateTable.element);
+    viewport = document.createElement('div');
+    viewport.className = 'trace-animation-viewport';
+    viewport.setAttribute('role', 'region');
+    viewport.setAttribute('aria-label', '二叉树画布');
+    viewport.tabIndex = 0;
+    viewport.append(canvas);
+    element.append(state, viewport);
+  } else {
+    element.append(canvas);
+    if (stateTable) element.append(stateTable.element);
+  }
   host.append(element);
 
   const stage = createStage(canvas, { fillViewport });
@@ -48,17 +69,35 @@ export function createTraceAnimation(host, explainHost, stateTable, frameFor, pa
 
   function render(step, options) {
     const layers = frameFor(step);
+    if (split) {
+      const { canvasWidth, canvasHeight } = layers[0].props;
+      canvas.style.minWidth = canvasWidth + 'px';
+      canvas.style.minHeight = canvasHeight + 'px';
+    }
     stage.render(layers, options);
-    const titleById = new Map(layers.map(layer => [layer.id, layer.title]));
+    const byId = new Map(layers.map(layer => [layer.id, layer]));
     for (const svg of canvas.querySelectorAll('.avc-svg')) {
+      const layer = byId.get(svg.dataset.avcSvg);
       svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', titleById.get(svg.dataset.avcSvg));
+      svg.setAttribute('aria-label', layer.title);
+      if (!split) continue;
+      for (const { id, fullLabel } of layer.data.nodes) {
+        if (!fullLabel) continue;
+        const circle = svg.querySelector(`[data-avc-key="n-${id}"] circle`);
+        if (!circle) continue;
+        let title = circle.querySelector('title');
+        if (!title) {
+          title = document.createElementNS(SVG_NS, 'title');
+          circle.append(title);
+        }
+        title.textContent = fullLabel;
+      }
     }
   }
   const observer = fillViewport ? new ResizeObserver(() => {
     if (current) render(current, { animate: false });
   }) : null;
-  observer?.observe(canvas);
+  observer?.observe(viewport);
 
   return {
     getStep: () => current,

@@ -68,7 +68,7 @@ export function polishLayout(prims, rect, style, layer) {
   const passes = c.profile.passes || (UNKNOWN_PASSES);
   for (const name of passes) {
     const fn = PASSES[name];
-    if (fn) fn(c, rect);
+    if (fn) fn(c, rect, layer);
   }
   /* 全风格通用的一条几何不变量：**线索虚线不许压在树边实线上**。
      放在所有 profile pass 之后，量的就是最终几何；没有 `th-*` 时它立刻返回（零成本）。 */

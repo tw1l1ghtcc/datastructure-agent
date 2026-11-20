@@ -40,7 +40,8 @@ try {
     if(index)await page.click('#nextBtn');
     assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'),run.steps[index].lineId);
     const tables=page.locator('.level-order-tables table');
-    const queue=await tables.nth(1).locator('tbody tr').evaluateAll(rows=>rows.map(row=>[row.cells[0].textContent,Number(row.cells[1].textContent)]));
+    assert.equal(await tables.count(),2);
+    const queue=await tables.first().locator('tbody tr').evaluateAll(rows=>rows.map(row=>[row.cells[0].textContent,Number(row.cells[1].textContent)]));
     assert.deepEqual(queue,run.steps[index].variables.queue.map(entry=>[entry.id,entry.level]));
   }
   assert.match(await page.locator('.level-order-tables').innerText(),/B → C/);

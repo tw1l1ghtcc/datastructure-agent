@@ -2,17 +2,19 @@ import { treeLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createGStateTable } from './g-state-table.js';
 import { createLevelOrderTable } from './level-order-table.js';
 import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
+import { isBinaryTraversal } from '../workbench/g-algorithms.js';
 
 function nodeId(value) {
   if (value == null) return null;
   return 'n' + Array.from(String(value), char => char.codePointAt(0).toString(16)).join('_');
 }
 
-function tree(id, title, records, { roots = [], current, visited = [], selected = [], threaded = false, huffman = false } = {}) {
+function tree(id, title, records, { roots = [], current, visited = [], selected = [], threaded = false, huffman = false, fitViewport = false } = {}) {
   const existing = new Set(records.map(node => huffman ? node.index : node.id));
   const ref = key => existing.has(key) ? nodeId(key) : null;
   const edgeTags = {};
   const threads = [];
+  const enlarged = fitViewport && records.length <= 16;
   const nodes = records.map(node => {
     const key = huffman ? node.index : node.id;
     const id = nodeId(key);
@@ -22,11 +24,13 @@ function tree(id, title, records, { roots = [], current, visited = [], selected 
     if (right) edgeTags[right] = huffman ? '1' : 'R';
     if (threaded && node.leftThread && ref(node.left)) threads.push({ from: id, to: ref(node.left), type: 'prev' });
     if (threaded && node.rightThread && ref(node.right)) threads.push({ from: id, to: ref(node.right), type: 'next' });
-    const label = compactLabel(huffman ? node.weight : node.key ?? key, 14);
+    const fullLabel = String(huffman ? node.weight : node.key ?? key);
+    const label = compactLabel(fullLabel, 14);
     return {
       id, label, left, right, children: node.children ? node.children.map(ref).filter(Boolean) : undefined,
-      radius: Math.max(17, Math.ceil(label.length * 4.5 / 2 + 8)),
-      fontSize: label.length > 8 ? 9 : 11,
+      radius: Math.max(enlarged ? 25 : 17, Math.ceil(label.length * 4.5 / 2 + 8)),
+      fontSize: label.length > 8 ? 9 : enlarged ? 14 : 11,
+      fullLabel: fitViewport && label !== fullLabel ? fullLabel : undefined,
       value: huffman && node.id != null ? compactLabel(node.id, 10) : undefined,
     };
   });
@@ -43,7 +47,7 @@ function tree(id, title, records, { roots = [], current, visited = [], selected 
   return treeLayer({
     id, title, nodes, roots: rootIds, edgeTags, threads,
     roles: { swap: [ref(current)].filter(Boolean), focus2: selected.map(ref).filter(Boolean), done: visited.map(ref).filter(Boolean) },
-    props: { canvasWidth, canvasHeight: Math.max(160, 116 + (levels - 1) * Math.max(66, 2 * radius + 24)) },
+    props: { canvasWidth, canvasHeight: Math.max(160, 116 + (levels - 1) * Math.max(66, 2 * radius + 24)), fitViewport },
   });
 }
 
@@ -51,7 +55,7 @@ function trailingSequence(id, title, values) {
   return sequenceLayer(id, title, values, {}, { first: Math.max(0, values.length - 10) });
 }
 
-function treeFrame(step) {
+function treeFrame(step, fitViewport) {
   const v = step.variables;
   const current = v.currentNode;
   const order = v.order ?? [];
@@ -71,8 +75,9 @@ function treeFrame(step) {
   const threaded = step.algorithm === 'threaded-binary-tree';
   const title = forest ? '有序森林' : threaded ? '二叉树 · 虚线为前驱／后继线索' : '二叉树';
   const layers = [tree('g-tree', title, v.nodes, {
-    roots: forest ? v.roots : [v.root], current, visited: order, selected: [v.edge?.to ?? v.childNode], threaded,
+    roots: forest ? v.roots : [v.root], current, visited: order, selected: [v.edge?.to ?? v.childNode], threaded, fitViewport,
   })];
+  if (fitViewport) return layers;
   if (v.queue) layers.push(sequenceLayer('g-queue', '队列（队首在左）', v.queue.map(entry => entry.id)));
   if (v.stack) layers.push(trailingSequence('g-stack', '递归栈（栈顶在右）', v.stack.map(frame => frame.id)));
   if (v.order) layers.push(trailingSequence('g-order', '访问顺序', order));
@@ -85,6 +90,7 @@ function treeFrame(step) {
 }
 
 export function createGAnimation(host, explainHost, run, config) {
+  const fillViewport = isBinaryTraversal(run.algorithm);
   const table = run.algorithm === 'binary-tree-level-order' ? createLevelOrderTable() : createGStateTable(run.algorithm, config);
-  return createTraceAnimation(host, explainHost, table, treeFrame, 'g', { run, config });
+  return createTraceAnimation(host, explainHost, table, step => treeFrame(step, fillViewport), 'g', { run, config, fillViewport });
 }

@@ -113,7 +113,7 @@ function layoutAsCanvas(data, rect, roles, props) {
   const gapX = props.leafGap ?? Math.min(70, Math.max(24, usableW / Math.max(1, leaves * 1.15)));
   const totalW = (leaves - 1) * gapX;
   const x0 = rect.x + rect.w / 2 - totalW / 2;
-  const y0 = rect.y + 62;
+  const y0 = rect.y + (props.fitViewport && order.length === 1 ? rect.h / 2 : 62);
   const px = (id) => x0 + (xs.get(id) ?? 0) * gapX;
   const py = (id) => y0 + (order.find((o) => o.node.id === id)?.depth ?? 0) * levelGap;
 

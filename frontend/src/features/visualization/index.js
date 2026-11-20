@@ -1,4 +1,5 @@
 import { arraySearch } from '../workbench/array-search.js';
+import { activeHeapSize, aSortDetail, aSortMarks, isASort } from './a-sort-state.js';
 import { createExplanationPanel } from './explanation-panel.js';
 /**
  * 成员03 · 数组动画渲染（主责路径 frontend/src/features/visualization/）
@@ -62,6 +63,18 @@ function prefersReducedMotion() {
  */
 export function describeStep(step) {
   if (!step) return '无步骤数据';
+  if (isASort(step.algorithm)) {
+    const position = '第 ' + (step.stepIndex + 1) + ' 步';
+    if (!step.array.length) return position + ' ｜ 空数组';
+    if (step.done) return position + ' ｜ 升序结果：[' + step.array.join(', ') + ']';
+    const { focus, range } = aSortMarks(step);
+    const cells = focus.map(index => 'A[' + index + ']=' + step.array[index]).join('、');
+    const bounds = range?.every(Number.isInteger) ? '当前区间 ' + range.join('～') : '';
+    const auxiliary = step.algorithm === 'heap-sort' ? '有效堆 ' + activeHeapSize(step) + ' 项'
+      : step.algorithm === 'merge-sort' ? '临时区 ' + step.variables.temp.length + ' 项' : aSortDetail(step);
+    const details = [bounds, cells, auxiliary].filter(Boolean);
+    return [position, ...(details.length ? details : ['元素数量 ' + step.array.length])].join(' ｜ ');
+  }
   /* 自定义代码（插桩追踪）用的是"行号 + 本步动的格子"这套语义，没有 left/right/mid。
      以前会掉进下面的二分查找文案，页面上出现"当前区间 undefined～undefined"（评审报告 §3.9）。 */
   if (step.algorithm === 'custom-engine') {
@@ -72,11 +85,20 @@ export function describeStep(step) {
       + (idx == null ? '' : ' ｜ 本步动的格子：' + idx);
   }
   if (arraySearch(step.algorithm)) {
-    const { index, comparisons } = step.variables;
+    const { index, comparisons, blockIndex, ranges } = step.variables;
     const position = index === null ? '' : ' ｜ A[' + index + '] = ' + step.array[index];
-    return '第 ' + (step.stepIndex + 1) + ' 步 ｜ 目标 ' + step.target + position + ' ｜ 已比较 ' + comparisons + ' 次';
+    const range = ranges?.[blockIndex];
+    const block = range ? ' ｜ 第 ' + blockIndex + ' 块' + (range.size ? '，范围 ' + range.start + '～' + range.end + '，最大值 ' + range.max : '为空') : '';
+    return '第 ' + (step.stepIndex + 1) + ' 步 ｜ 目标 ' + step.target + block + position + ' ｜ 已比较 ' + comparisons + ' 次';
   }
-  if (step.algorithm === 'bubble-sort' || step.algorithm === 'custom-array') return `第 ${step.stepIndex + 1} 步：${step.description}`;
+  if (step.algorithm === 'bubble-sort') {
+    const { pass, index, sortedFrom } = step.variables;
+    const round = pass ? '第 ' + pass + ' 趟' : '尚未开始比较';
+    const pair = Number.isInteger(index) && index + 1 < step.array.length
+      ? ' ｜ A[' + index + ']=' + step.array[index] + '，A[' + (index + 1) + ']=' + step.array[index + 1] : '';
+    return '第 ' + (step.stepIndex + 1) + ' 步 ｜ ' + round + pair + ' ｜ 已就位 ' + (step.array.length - sortedFrom) + ' 项';
+  }
+  if (step.algorithm === 'custom-array') return `第 ${step.stepIndex + 1} 步：${step.description}`;
   const { array = [], target, variables = {}, event, done, result } = step;
   const { left, right, mid } = variables;
   const parts = [`第 ${step.stepIndex + 1} 步：${EVENT_TEXT[event] ?? event}`];
@@ -104,7 +126,7 @@ export function describeStep(step) {
  */
 export function describeTransition(previous, current) {
   if (!current) return '';
-  if (arraySearch(current.algorithm)) return current.description;
+  if (arraySearch(current.algorithm) || isASort(current.algorithm)) return current.description;
   if (current.algorithm === 'bubble-sort' || current.algorithm === 'custom-array') return current.description;
   /* 自定义代码：只说"第几步、哪一行"，不要编 left/right */
   if (current.algorithm === 'custom-engine') {

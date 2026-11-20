@@ -1,19 +1,21 @@
 // shared/algorithms/final/e/counting-sort.js
-const SOURCE_VERSION = 'counting-sort-c-v1';
+const SOURCE_VERSION = 'counting-sort-c-v2';
 const MAX_RANGE = 5000;
 const NO_RESULT = Symbol('no-result');
 
 const SOURCE_LINES = [
   { lineId: 'init', text: 'void counting_sort(int arr[], int n) {' },
-  { lineId: 'validate', text: '  /* 元素校验：必须为整数，且值域跨度不超过 5000 */' },
+  { lineId: 'empty', text: '  if (n <= 0) return;' },
   { lineId: 'range', text: '  int minv = arr[0], maxv = arr[0];' },
   { lineId: 'range-scan', text: '  for(int i=1;i<n;i++){ if(arr[i]<minv) minv=arr[i]; if(arr[i]>maxv) maxv=arr[i]; }' },
-  { lineId: 'alloc', text: '  int k = maxv - minv + 1; int* cnt = new int[k];' },
+  { lineId: 'validate', text: '  long long width = (long long)maxv - minv + 1; if (width > 5000) return;' },
+  { lineId: 'alloc', text: '  int k = (int)width; int* cnt = new int[k];' },
   { lineId: 'clear', text: '  for(int i=0;i<k;i++) cnt[i] = 0;' },
   { lineId: 'count', text: '  for(int i=0;i<n;i++) cnt[arr[i]-minv]++;' },
   { lineId: 'prefix', text: '  for(int i=1;i<k;i++) cnt[i] += cnt[i-1];' },
   { lineId: 'fill', text: '  int* out = new int[n]; for(int i=n-1;i>=0;i--) out[--cnt[arr[i]-minv]] = arr[i];' },
   { lineId: 'copy', text: '  for(int i=0;i<n;i++) arr[i] = out[i];' },
+  { lineId: 'release', text: '  delete[] out; delete[] cnt;' },
   { lineId: 'done', text: '}' },
 ];
 
@@ -54,7 +56,7 @@ export function generateCountingSortSteps({ list }) {
   }
 
   if (input.length === 0) {
-    record('done', 'init', '数组为空，无需排序', {}, []);
+    record('done', 'empty', '数组为空，无需排序', {}, []);
     return { steps, result: [], sourceVersion: SOURCE_VERSION, sourceLines: SOURCE_LINES };
   }
 

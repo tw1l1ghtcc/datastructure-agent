@@ -16,6 +16,7 @@
  */
 
 import { createVisualization } from '../index.js';
+import { createExplanationPanel } from '../explanation-panel.js';
 import { ITEMS } from '../../../../vendor/plus/vendor/catalog/index.js';
 import { toStepV1, COVERED_BY_EXISTING_PROTOTYPE } from '../../../../vendor/plus/app/step-adapter.js';
 import { asFrameBuilder } from '../../../../vendor/plus/app/host-frame.js';
@@ -145,6 +146,21 @@ export async function buildPlusRun(id, variantId = 'v1', inputOverride = null) {
  */
 export function createPlusView(host, run, { explainContainer = null } = {}) {
   if (!host) throw new Error('createPlusView 需要一个容器');
+  const raw = run.rawSteps || [];
+  function describe(step, index, caption, status) {
+    if (!step || !caption || !status) return;
+    const trace = raw[index] ?? step;
+    const position = '第 ' + (index + 1) + ' 步';
+    if (run.algorithm === 'custom-engine') {
+      caption.textContent = '追踪到源码第 ' + (step.variables?.line ?? step.lineId) + ' 行。';
+      const layers = trace.layers?.length ?? 0;
+      status.textContent = position + (layers ? ' ｜ 本步记录 ' + layers + ' 个结构' : '') + (step.done ? ' ｜ 运行结束' : '');
+    } else {
+      caption.textContent = trace.note || step.description || trace.event || position;
+      status.textContent = position + (step.done ? ' ｜ 运行结束' : '');
+    }
+  }
+
   if (run.structure === 'array') {
     // 走本项目自己的数组可视化（样式/动画原样），只替换帧构造器
     const view = createVisualization(host, {
@@ -152,24 +168,24 @@ export function createPlusView(host, run, { explainContainer = null } = {}) {
       explainContainer,
       frameBuilder: (step, opts) => asFrameBuilder(step, opts),
     });
-    // 本项目 describeStep 是按"二分查找"语义写文案的；这里用每步自己的 note 覆盖，
-    // 只在 plus 示例里生效（不改 index.js，也不影响本项目原有算法）。
-    const raw = run.rawSteps || [];
-    const original = view.showStep;
-    view.showStep = (step, meta = {}) => {
-      const out = original(step, meta);
-      const i = (meta && typeof meta.stepIndex === 'number') ? meta.stepIndex
-        : (step && typeof step.stepIndex === 'number' ? step.stepIndex : -1);
-      const trace = raw[i];
-      if (trace) {
-        const scope = explainContainer || host;
-        const caption = scope.querySelector && scope.querySelector('.bsviz-caption');
-        const status = scope.querySelector && scope.querySelector('.bsviz-status');
-        if (caption) caption.textContent = '第 ' + (i + 1) + ' 步：' + String(trace.event || '');
-        if (status) status.textContent = String(trace.note || '');
-      }
-      return out;
+    const scope = explainContainer ?? host;
+    const caption = scope.querySelector('.bsviz-caption');
+    const status = scope.querySelector('.bsviz-status');
+    const updateExplanation = () => {
+      const step = view.getStep();
+      describe(step, step?.stepIndex, caption, status);
     };
+    const showStep = view.showStep;
+    const replay = view.playEnterAnimation;
+    view.showStep = (step, meta) => {
+      showStep(step, meta);
+      updateExplanation();
+    };
+    view.playEnterAnimation = () => {
+      replay();
+      updateExplanation();
+    };
+    updateExplanation();
     return view;
   }
 
@@ -177,36 +193,26 @@ export function createPlusView(host, run, { explainContainer = null } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'plus-viz';
   host.replaceChildren(wrap);
+  const { explain, caption, status } = createExplanationPanel();
+  (explainContainer ?? host).append(explain);
   const stage = createSvgStage(wrap);
   let current = null;
   let index = -1;
-  const raw = run.rawSteps || [];
   function showStep(step, meta = {}) {
     const i = (meta && typeof meta.stepIndex === 'number') ? meta.stepIndex : (step && typeof step.stepIndex === 'number' ? step.stepIndex : index + 1);
     const traceStep = raw[i] || step;
     current = traceStep;
     index = i;
     stage.render((traceStep && traceStep.layers) || [], { animate: true, prevLayers: null });
+    describe(step, index, caption, status);
     return traceStep;
   }
   return {
     showStep,
     getStep: () => current,
     playEnterAnimation: () => { if (current) stage.render(current.layers || [], { animate: true }); },
-    destroy: () => { stage.clear(); wrap.remove(); },
+    destroy: () => { stage.clear(); wrap.remove(); explain.remove(); },
   };
-}
-
-/** 给算法菜单用的章节数据：[[章节名, [[id, 名称], …]], …] */
-export function plusMenuChapters() {
-  const byPkg = new Map();
-  for (const c of PLUS_CASES) {
-    if (!byPkg.has(c.pkg)) byPkg.set(c.pkg, []);
-    byPkg.get(c.pkg).push([c.id, c.title]);
-  }
-  return [...byPkg.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([pkg, rows]) => ['示例库 · ' + (PKG_NAME[pkg] || pkg), rows]);
 }
 
 /* ----------------------------------------------------------------------------

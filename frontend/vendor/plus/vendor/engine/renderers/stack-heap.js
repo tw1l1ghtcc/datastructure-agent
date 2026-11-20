@@ -112,20 +112,29 @@ export function layoutHeap(layer, rect, env = {}) {
   // 逻辑堆形态（完全二叉树）：把数组画成父子关系，方便核对堆性质
   if (showTree) {
     const arr = data.tree;
-    const top = y0 + Math.ceil(cells.length / cols) * (cellH + 22) + 26;
-    const availH = rect.y + rect.h - top - 16;
-    const levelH = arr.length > 1 ? Math.max(30, Math.min(56, availH / Math.max(1, Math.floor(Math.log2(arr.length)) + 1))) : 0;
+    const depth = Math.floor(Math.log2(arr.length));
+    const fitTree = props.fitTree && cells.length === 0;
+    let top = y0 + Math.ceil(cells.length / cols) * (cellH + 22) + 26;
+    let levelH = depth ? Math.max(30, Math.min(56, (rect.y + rect.h - top - 16) / (depth + 1))) : 0;
+    let radius = 13;
+    let inset = 40;
+    if (fitTree) {
+      inset = 16;
+      const slotWidth = Math.max(1, rect.w - 2 * inset) / 2 ** depth;
+      levelH = depth ? Math.max(1, Math.min(136, (rect.h - 100) / depth)) : 0;
+      radius = Math.max(2, Math.min(27, slotWidth * 0.42, depth ? levelH * 0.32 : 27));
+      top = rect.y + Math.max(50, (rect.h - depth * levelH) / 2);
+    }
     const root = data.treeRoot ?? 0;
     const pos = new Map();
     const place = (k, depth, lo, hi) => {
       if (k >= arr.length) return;
       const mid = (lo + hi) / 2;
       pos.set(k, [rect.x + mid, top + depth * levelH]);
-      const n = arr.length;
       place(2 * k + 1, depth + 1, lo, mid);
       place(2 * k + 2, depth + 1, mid, hi);
     };
-    place(root, 0, 40, rect.w - 40);
+    place(root, 0, inset, rect.w - inset);
     for (let k = 0; k < arr.length; k++) {
       const left = 2 * k + 1;
       const right = 2 * k + 2;
@@ -133,7 +142,7 @@ export function layoutHeap(layer, rect, env = {}) {
         if (ch < arr.length && pos.has(k) && pos.has(ch)) {
           const a = pos.get(k);
           const b = pos.get(ch);
-          prims.push(P.line(`te-${k}-${ch}`, a[0], a[1] + 12, b[0], b[1] - 12, { stroke: '#c7d0de', sw: 1.2 }));
+          prims.push(P.line(`te-${k}-${ch}`, a[0], a[1] + radius - 1, b[0], b[1] - radius + 1, { stroke: '#c7d0de', sw: 1.2 }));
         }
       }
     }
@@ -142,12 +151,12 @@ export function layoutHeap(layer, rect, env = {}) {
       const [x, y] = pos.get(k);
       const st = stateOf(roles, k);
       const s = styleOf(st);
-      prims.push(P.circle(`tn-${k}`, x, y, 13, { fill: st === 'idle' ? '#ffffff' : s.fill, stroke: st === 'idle' ? MEMORY.MemFrame : s.stroke, sw: borderWidth(st), opacity: s.opacity, z: 3 }));
-      prims.push(P.text(`tnv-${k}`, x, y, String(arr[k] ?? ''), { size: 10, fill: st === 'idle' ? UI.text : s.text, z: 4 }));
-      prims.push(P.text(`tni-${k}`, x, y + 20, String(k), { size: 9, fill: UI.textMuted }));
+      prims.push(P.circle(`tn-${k}`, x, y, radius, { fill: st === 'idle' ? '#ffffff' : s.fill, stroke: st === 'idle' ? MEMORY.MemFrame : s.stroke, sw: borderWidth(st), opacity: s.opacity, z: 3 }));
+      prims.push(P.text(`tnv-${k}`, x, y, String(arr[k] ?? ''), { size: fitTree ? Math.min(15, Math.max(8, radius * 0.65)) : 10, fill: st === 'idle' ? UI.text : s.text, z: 4 }));
+      prims.push(P.text(`tni-${k}`, x, y + radius + 7, String(k), { size: 9, fill: UI.textMuted }));
       nodes.set(`tree:${k}`, { x, y });
     }
-    prims.push(P.text('treelabel', rect.x + 16, top - 22, '逻辑堆（完全二叉树形态）', { align: 'left', size: 10, fill: UI.textMuted }));
+    if (!fitTree) prims.push(P.text('treelabel', rect.x + 16, top - 22, '逻辑堆（完全二叉树形态）', { align: 'left', size: 10, fill: UI.textMuted }));
   }
 
   roles.pointers.forEach((p, i) => {

@@ -13,6 +13,7 @@
 | POST /api/algorithms/bubble-sort/runs | 200，创建并返回冒泡排序 run | 01 |
 | POST /api/algorithms/{D包树或哈希算法}/runs | 200，创建树或哈希运行 | 01 |
 | POST /api/algorithms/{C包算法}/runs | 200，创建归并或多路查找树运行 | 01 |
+| POST /api/algorithms/{E包算法}/runs | 200，创建线性表、矩阵或分配排序运行 | 01 |
 | POST /api/algorithms/{G包算法}/runs | 200，创建 G 包运行。二叉排序树返回紧凑回放 | 01 |
 | POST /api/algorithms/union-find/runs | 200，创建并查集运行 | 01 |
 | POST /api/algorithms/{图算法}/runs | 200，创建并返回图算法 run | 01 |
@@ -55,6 +56,20 @@ D 包新增 `avl-tree`、`red-black-tree`、`hash-linear-probing`、`hash-quadra
 
 C 包运行标识为 `optimal-merge-tree`、`multiway-merge`、`replacement-selection`、`b-tree`、`b-plus-tree`。请求分别为 `{weights}`、`{runs,k}`、`{array,capacity}`、`{keys,queries,t}`、`{keys,queries}`。沿用 C 包现有上限及校验，见 [C 包接口](../../shared/algorithms/final/c/README.md)。运行保存输入快照 `input`，共用运行查询、步骤查询和问答接口。主工作台先展示状态表，树结构由引擎自动构建，动画待接入。
 
+E 包复用运行、单步查询及步骤问答。合法输入返回 `{runId,createdAt,algorithm,input,sourceVersion,sourceLines,steps,result}`。参数错误或引擎拒绝输入时返回 400 INVALID_INPUT。
+
+| 算法标识 | 请求体与参数 |
+| --- | --- |
+| `array-list-reverse`、`singly-linked-list-reverse` | `{list}`，可为空 |
+| `array-list-delete-range` | `{list,left,right}`，删除有效的零基闭区间 |
+| `singly-linked-list-insert` | `{list,pos,value}`，`pos` 从 0 到表长，`value` 为 32 位整数 |
+| `singly-linked-list-delete` | `{list,pos}`，`pos` 为现有元素的零基下标 |
+| `kth-from-end` | `{list,k}`，`k` 从 1 到表长，结果为 `{nodeId,value}` |
+| `sparse-matrix-transpose` | `{rows,cols,triples:[{i,j,e}]}`，非负矩阵尺寸，最多 64 列和 64 个三元组。行列下标从 0 开始，坐标唯一，`e` 为有限数值 |
+| `radix-sort`、`counting-sort` | `{list}`，基数排序接受非负整数，计数排序要求 `max - min + 1 ≤ 5000` |
+
+顺序表和链表最多 64 个元素，两个排序最多 24 个元素，序列元素均为 32 位有符号整数。链表快照保留 `headId` 和结点的稳定编号。转置从 `variables.triples[k]` 读取本步的三元组，使用 `pos` 标记输出位置。计数排序使用 `countDiff` 记录本步增量，工作台按当前步回放增量还原计数表。
+
 二叉树层序遍历接受 `{root,nodes}`，每个节点为 `{id,left,right}`，最多 64 个唯一非空字符串 ID。孩子为空时使用 null，非空孩子须引用已定义的节点。空树为 `{root:null,nodes:[]}`。拒绝环、共享孩子及从根不可达的节点。运行保留输入快照 `input`，步骤与 G 包引擎一致，包含节点关系、FIFO 队列及层号（根为第 1 层）、当前节点、访问顺序和分层结果。主工作台使用节点、队列和分层状态表，支持单步、回看和问答；树形动画待接入。
 
 其余 G 包运行接口共用以下格式。创建成功保留输入快照 `input`。非法结构、超出算法上限或非法模式返回 400 INVALID_INPUT。各算法继续使用已合并的轨迹字段，见 [G 包算法验收](../team/final/g-validation.md)。
@@ -69,6 +84,19 @@ C 包运行标识为 `optimal-merge-tree`、`multiway-merge`、`replacement-sele
 | `binary-search-tree` | `{operations:[{type,key}]}`，类型为 `insert` 或 `search`，键为 32 位有符号整数，最多 128 次操作、64 个不同插入键 |
 
 森林节点为 `{id,children}`，根和孩子均按输入顺序排列，最多 64 个节点。二叉排序树的创建和整次查询返回 `format:"bst-replay-v1"`，`treeStates` 保存每次插入后的节点快照，传输步骤通过下标引用快照和操作路径。工作台用 `restoreBinarySearchTreeRun` 还原为标准步骤。单步查询和「问一步」直接使用服务端按同一轨迹还原的步骤。
+
+F 包复用 `POST /api/algorithms/<算法标识>/runs`、运行查询、步骤查询和「问一步」。以下请求以 `input` 保存。结构、模式或数量上限非法时返回 `400 INVALID_INPUT`。可定位的括号错误、表达式错误和有向环随运行的末帧返回。
+
+| 算法标识 | 请求体 | 结果 |
+| --- | --- | --- |
+| `bracket-matching` | `{text}`，最多 120 个字符 | `{matched,index,reason}`，完全匹配时 index 为 -1 |
+| `infix-to-postfix` | `{expression}` | 后缀词元数组 |
+| `expression-evaluation` | `{expression,mode}`，模式为 `infix`（默认）或 `postfix` | `{value}` |
+| `naive-string-match`、`kmp` | `{text,pattern}`，KMP 可加 `mode`，支持 `next`（默认）和 `nextval` | 全部匹配起点的数组，空模式返回 `[0]` |
+| `expression-dag` | `{expression}` | `{value,root,nodes,edges,order}`，依赖边包含左或右操作数角色 |
+| `critical-path` | `{nodes,edges,directed:true}`，活动为 `[起点,终点,工期]` | 总工期、时间表、活动时差、关键边和前八条关键路径 |
+
+主串和模式串分别最多 120 和 48 个 Unicode 字符，下标从 0 开始。表达式最多 256 字符、64 个词元。表达式错误返回 `{error,index}`。关键路径最多 30 个顶点和 120 项活动，按千分之一的单位计算，接受 0 至 10 亿且最多三位小数的工期，保留平行活动。若有更多关键路径，`morePaths` 为 true。边界样例见 [F 包验收](../team/final/f-validation.md)。
 
 并查集接受 `{elements, operations}`，1 至 30 个唯一非空字符串元素，最多 60 个操作。操作格式为 `["union", x, y]` 或 `["find", x]`，引用未知元素时返回 400。空操作序列可运行。运行保存输入快照 `input`，步骤使用现有引擎的 `parent`、`rank`、`setCount`、`currentOp` 和 `findPath`。工作台使用父节点表，单步、回看、源码高亮和问答共用当前步骤；树形动画待接入。
 

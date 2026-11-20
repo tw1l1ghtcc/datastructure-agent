@@ -1,4 +1,11 @@
 // backend/src/routes/runs.js
+import { generateBracketMatchingSteps } from '../../../shared/algorithms/final/f/bracket-matching.js';
+import { generateInfixToPostfixSteps } from '../../../shared/algorithms/final/f/infix-to-postfix.js';
+import { generateExpressionEvaluationSteps } from '../../../shared/algorithms/final/f/expression-evaluation.js';
+import { generateNaiveStringMatchSteps } from '../../../shared/algorithms/final/f/naive-string-match.js';
+import { generateKmpSteps } from '../../../shared/algorithms/final/f/kmp.js';
+import { generateExpressionDagSteps } from '../../../shared/algorithms/final/f/expression-dag.js';
+import { generateCriticalPathSteps } from '../../../shared/algorithms/final/f/critical-path.js';
 import { generateAvlSteps } from '../../../shared/algorithms/final/d/avl-tree.js';
 import { generateRedBlackSteps } from '../../../shared/algorithms/final/d/red-black-tree.js';
 import { generateHashLinearProbingSteps } from '../../../shared/algorithms/final/d/hash-linear-probing.js';
@@ -32,6 +39,16 @@ import { generateLinearSearchSteps } from '../../../shared/algorithms/final/d/li
 import { generateBlockSearchSteps } from '../../../shared/algorithms/final/d/block-search.js';
 import { generateBfsSteps } from '../../../shared/algorithms/final/b/bfs.js';
 import { validateGraphInput } from '../../../shared/algorithms/final/b/validate-util.js';
+import { eAlgorithm, validateEInput } from '../../../frontend/src/features/workbench/e-algorithms.js';
+import { generateArrayListDeleteRangeSteps } from '../../../shared/algorithms/final/e/array-list-delete-range.js';
+import { generateArrayListReverseSteps } from '../../../shared/algorithms/final/e/array-list-reverse.js';
+import { generateSinglyLinkedInsertSteps } from '../../../shared/algorithms/final/e/singly-linked-list-insert.js';
+import { generateSinglyLinkedListDeleteSteps } from '../../../shared/algorithms/final/e/singly-linked-list-delete.js';
+import { generateSinglyLinkedListReverseSteps } from '../../../shared/algorithms/final/e/singly-linked-list-reverse.js';
+import { generateKthFromEndSteps } from '../../../shared/algorithms/final/e/kth-from-end.js';
+import { generateSparseMatrixTransposeSteps } from '../../../shared/algorithms/final/e/sparse-matrix-transpose.js';
+import { generateCountingSortSteps } from '../../../shared/algorithms/final/e/counting-sort.js';
+import { generateRadixSortSteps } from '../../../shared/algorithms/final/e/radix-sort.js';
 import { createRun, getRun } from '../runs/store.js';
 
 // --- A包新增导入 ---
@@ -93,6 +110,28 @@ function sendRun(res, run) {
   res.end(JSON.stringify(payload));
 }
 
+const fGenerators = {
+  'bracket-matching': generateBracketMatchingSteps,
+  'infix-to-postfix': generateInfixToPostfixSteps,
+  'expression-evaluation': generateExpressionEvaluationSteps,
+  'naive-string-match': generateNaiveStringMatchSteps,
+  kmp: generateKmpSteps,
+  'expression-dag': generateExpressionDagSteps,
+  'critical-path': generateCriticalPathSteps,
+};
+
+export function handleCreateFRun(res, body, algorithm) {
+  let input, result;
+  try {
+    input = JSON.parse(body);
+    result = fGenerators[algorithm](input);
+  } catch (error) {
+    if (!(error instanceof SyntaxError || error instanceof TypeError || error instanceof RangeError)) throw error;
+    return sendError(res, 400, 'INVALID_INPUT', error.message);
+  }
+  sendRun(res, createRun({ algorithm, input, ...result }));
+}
+
 export function handleCreateGRun(res, body, algorithm) {
   let input, result;
   try {
@@ -107,6 +146,33 @@ export function handleCreateGRun(res, body, algorithm) {
     ? { replay: result, ...restoreBinarySearchTreeRun(result) }
     : result;
   sendRun(res, createRun({ algorithm, input, ...runData }));
+}
+
+const eGenerators = {
+  'array-list-delete-range': generateArrayListDeleteRangeSteps,
+  'array-list-reverse': generateArrayListReverseSteps,
+  'singly-linked-list-insert': generateSinglyLinkedInsertSteps,
+  'singly-linked-list-delete': generateSinglyLinkedListDeleteSteps,
+  'singly-linked-list-reverse': generateSinglyLinkedListReverseSteps,
+  'kth-from-end': generateKthFromEndSteps,
+  'sparse-matrix-transpose': generateSparseMatrixTransposeSteps,
+  'radix-sort': generateRadixSortSteps,
+  'counting-sort': generateCountingSortSteps,
+};
+
+export function handleCreateERun(res, body, algorithm) {
+  let input;
+  try {
+    input = JSON.parse(body);
+    validateEInput(eAlgorithm(algorithm), input);
+  } catch (error) {
+    if (!(error instanceof TypeError || error instanceof SyntaxError)) throw error;
+    return sendError(res, 400, 'INVALID_INPUT', error.message);
+  }
+  const result = eGenerators[algorithm](input);
+  const last = result.steps.at(-1);
+  if (last.event === 'error') return sendError(res, 400, 'INVALID_INPUT', last.description);
+  sendRun(res, createRun({ algorithm, input, ...result }));
 }
 
 const dGenerators={

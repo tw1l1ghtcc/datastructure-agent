@@ -30,3 +30,8 @@ const configs = {
 
 export const gAlgorithmIds = Object.keys(configs);
 export function gAlgorithm(id) { return Object.hasOwn(configs, id) ? configs[id] : null; }
+
+export function isBinaryTraversal(id) {
+  return id === 'binary-tree-preorder' || id === 'binary-tree-inorder' ||
+    id === 'binary-tree-postorder' || id === 'binary-tree-level-order';
+}

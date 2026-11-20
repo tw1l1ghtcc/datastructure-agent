@@ -43,7 +43,10 @@ node tests/agent-conversation.browser.mjs
 node tests/exercises.browser.mjs
 node tests/visualization-window.browser.mjs
 node tests/g-workbench.browser.mjs
+node tests/e-workbench.browser.mjs
+node tests/f-workbench.browser.mjs
 node tests/workbench-layout.browser.mjs
+node tests/workbench-explanation.browser.mjs
 node tests/learning-pages.browser.mjs
 ```
 

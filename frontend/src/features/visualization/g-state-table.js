@@ -1,4 +1,4 @@
-import { createTreeStateTable as table } from './level-order-table.js';
+import { createStateTable as table } from './state-table.js';
 import { framePhases, gVariableText, operationResultText, showList } from '../workbench/g-state.js';
 
 function markCurrent(element, index) {
@@ -98,10 +98,7 @@ export function createGStateTable(algorithm, config) {
           tables = bst(config, v);
           break;
         default:
-          tables = [
-            binaryTable(v.nodes, '节点关系 · 根节点 ' + (v.root ?? '空'), v.currentNode),
-            stackTable(v.stack), orderTable(v.order),
-          ];
+          tables = [stackTable(v.stack), orderTable(v.order)];
       }
       element.replaceChildren(...tables);
     },

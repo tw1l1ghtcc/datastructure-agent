@@ -2,19 +2,19 @@
 
 根据实际 PR 和验收填写。负责人见[最终任务登记表](roster.md)，代表项和阶段标准见[最终任务清单](README.md)。
 
-更新：2026-11-18。集成基线为 main 的 `31a3839`，包含 [PR #70](https://github.com/tw1l1ghtcc/datastructure-agent/pull/70)。本轮 54 项演示中，A、B、C、D、G 五包共 **38 项算法实现已合入 main**，还有 16 项待交付。该基线的工作台已接入本轮 29 项。G 包工作台集成分支补齐其余 9 项入口与状态表，分支中共接入 40 项内置算法（含原有二分查找和冒泡排序，自定义代码另计）。
+工作台动画汇总版本接入 A 到 G 包 54 项算法。计入原有的二分查找和冒泡排序，共 56 项内置算法。下表保留各包的历史 PR 和验收记录。
 
-这里按主分支记录；本地集成分支、未合并的 [PR #66](https://github.com/tw1l1ghtcc/datastructure-agent/pull/66) 中的示例与整程序引擎不计入已交付数。
+[PR #66](https://github.com/tw1l1ghtcc/datastructure-agent/pull/66) 已合入主分支。自定义代码示例与整程序引擎不计入内置算法数量。
 
 | 本轮编号 | 算法包 | 本轮交付 | 状态 | PR | 验收人 / 证据 / 阻塞 |
 |---|---|---|---|---|---|
-| 01 | — | 工作台公共入口、运行接口和分批集成 | 已接入29项本轮算法 | [#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53)、[#54](https://github.com/tw1l1ghtcc/datastructure-agent/pull/54)、[#67](https://github.com/tw1l1ghtcc/datastructure-agent/pull/67) | 7项图算法、2项数组查找、7项比较排序已接入；#67最后两类高亮由01协助修复并回归。并查集、C包五项、D包树和哈希及G包层序遍历已使用状态表接入 |
-| 02 | — | 统一视图、动画与播放 | 数组查找和A包比较排序复用数组视图；图算法已有SVG预览 | [#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53)、[#67](https://github.com/tw1l1ghtcc/datastructure-agent/pull/67) | A包已补初始化/完成态及归并读写高亮；正式图动画、并查集、树、哈希槽位和桶链仍待联调。#66仍为未合并提案 |
+| 01 | — | 工作台公共入口、运行接口和分批集成 | 已接入本轮 54 项 | [#69](https://github.com/tw1l1ghtcc/datastructure-agent/pull/69)、[#71](https://github.com/tw1l1ghtcc/datastructure-agent/pull/71) | E 包九项、F 包七项已接入，团队交叉复核另行记录 |
+| 02 | — | 统一视图、动画与播放 | 数组查找沿用数组视图，排序、图、树、哈希和链表已接入动画 | [#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53)、[#67](https://github.com/tw1l1ghtcc/datastructure-agent/pull/67)、[#66](https://github.com/tw1l1ghtcc/datastructure-agent/pull/66) | 复现入口见[测试说明](../../../tests/README.md) |
 | 03 | — | PPT、团队博客、演示与课程材料 | 待记录 | — | — |
 | 04 | A | 7项：直接插入、折半插入、希尔、快速、简单选择、堆、归并排序（11分） | 7项算法已合并并接入工作台 | [#67](https://github.com/tw1l1ghtcc/datastructure-agent/pull/67) | 01复核并协助修复至6eaa6ad；84项正式测试、7056组排序结果、7份展示C编译运行通过，含真实SVG帧高亮回归。[验收与剩余事项](a-validation.md)；真实模型效果、独立稳定性身份验证及配套题库另行跟踪 |
-| 05 | B | 8 项：BFS、DFS、Prim、Kruskal、Dijkstra、Floyd、拓扑排序、并查集（15 分） | 8 项算法已合并并接入工作台 | [#49](https://github.com/tw1l1ghtcc/datastructure-agent/pull/49)、[#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53) | #49 验收记录；正式图动画待联调；并查集已接父节点表及操作输入 |
-| 06 | C | 5 项：最佳归并树、多路平衡归并、置换选择、B 树、B+ 树（14 分） | 5 项算法已合并并接入主工作台状态表 | [#62](https://github.com/tw1l1ghtcc/datastructure-agent/pull/62)、[#51](https://github.com/tw1l1ghtcc/datastructure-agent/pull/51)（登记） | 01 复核提交 09f05f6：静态检查、全仓 72 项测试（无跳过，含 C/C++ 实际编译运行）及追加 300 组独立生成用例通过。[接口与预览](../../../shared/algorithms/final/c/README.md)、[自测及交接](c-validation.md)；主工作台表单、状态表、回看和问答已接入并经浏览器验收；正式动画联调待办 |
-| 07 | D | 8 项：顺序查找、分块查找、AVL 树、红黑树、哈希线性探测、平方探测、双散列、拉链法（14 分） | 8 项算法已合并并接入工作台 | [#50](https://github.com/tw1l1ghtcc/datastructure-agent/pull/50)、[#52](https://github.com/tw1l1ghtcc/datastructure-agent/pull/52)、[#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53) | D 包 9 项专项测试通过；顺序查找和分块查找已接入。AVL、红黑树和四种哈希已接入节点／槽位／桶链状态表；正式动画待接入 |
-| 08 | E | 单链表插入 | 已分配 | — | — |
-| 09 | F | KMP | 已分配 | — | — |
-| 10 | G | 四种二叉树遍历、二叉树重建、线索化、树与森林转换及遍历、哈夫曼编码、二叉排序树 | 10 项算法已合并，层序遍历已在 main 接入，另 9 项在工作台集成分支接入 | [#64](https://github.com/tw1l1ghtcc/datastructure-agent/pull/64)、[#70](https://github.com/tw1l1ghtcc/datastructure-agent/pull/70) | [算法验收](g-validation.md)，集成分支用状态表回放，树动画待联调 |
+| 05 | B | 8 项：BFS、DFS、Prim、Kruskal、Dijkstra、Floyd、拓扑排序、并查集（15 分） | 8 项算法已合并并接入工作台 | [#49](https://github.com/tw1l1ghtcc/datastructure-agent/pull/49)、[#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53) | 图算法和并查集已接入 Plus 动画，Dijkstra、Floyd 和并查集保留各自的状态表 |
+| 06 | C | 5 项：最佳归并树、多路平衡归并、置换选择、B 树、B+ 树（14 分） | 5 项算法已接入工作台、状态表和 Plus 动画 | [#62](https://github.com/tw1l1ghtcc/datastructure-agent/pull/62)、[#51](https://github.com/tw1l1ghtcc/datastructure-agent/pull/51)（登记） | 01 复核提交 09f05f6 记录静态检查、72 项测试（含 C/C++ 编译运行）和 300 组独立生成用例。[接口与预览](../../../shared/algorithms/final/c/README.md)、[自测及交接](c-validation.md) |
+| 07 | D | 8 项：顺序查找、分块查找、AVL 树、红黑树、哈希线性探测、平方探测、双散列、拉链法（14 分） | 8 项算法已合并并接入工作台 | [#50](https://github.com/tw1l1ghtcc/datastructure-agent/pull/50)、[#52](https://github.com/tw1l1ghtcc/datastructure-agent/pull/52)、[#53](https://github.com/tw1l1ghtcc/datastructure-agent/pull/53) | D 包九项专项测试通过。顺序查找、分块查找使用数组视图，AVL、红黑树和四种哈希使用 Plus 动画和状态表 |
+| 08 | E | 线性表与数组算法 9 项 | 工作台与 Plus 动画已接入 | [#73](https://github.com/tw1l1ghtcc/datastructure-agent/pull/73) | 单链表插入为接入代表项 |
+| 09 | F | 字符串、栈与有向无环图 7 项 | 工作台与 Plus 动画已接入 | `codex/final-f-string-stack-dag` | [F 包验收](f-validation.md)，待 01 与 02 复核 |
+| 10 | G | 四种二叉树遍历、二叉树重建、线索化、树与森林转换及遍历、哈夫曼编码、二叉排序树 | 工作台与 Plus 动画已接入 | [#70](https://github.com/tw1l1ghtcc/datastructure-agent/pull/70)、[#71](https://github.com/tw1l1ghtcc/datastructure-agent/pull/71) | [算法验收](g-validation.md)，四种遍历使用树图与遍历状态分栏 |

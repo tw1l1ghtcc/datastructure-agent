@@ -47,16 +47,37 @@ try {
     if(algorithm==='replacement-selection') assert.deepEqual(run.result,[[4,5],[1,2,6]]);
     if(tree) assert.deepEqual(run.result.queries.map(query=>query.found),[true,false]);
     await page.locator('#c-edit').waitFor();
+    const animated = page.locator('[data-viz-engine="plus-c"]');
+    await animated.waitFor();
+    assert.ok(await animated.locator('.avc-svg').count());
     assert.equal(await page.locator('#c-fields').isHidden(),true);
     await page.click('#nextBtn');
     assert.equal(await page.locator('#code-lines .active').count(),1);
     await page.click('[data-t="last"]');
     assert.match(await page.locator('[data-explain-host]').innerText(),/运行结束/);
+    const last = run.steps.at(-1);
+    if (tree || algorithm === 'optimal-merge-tree') {
+      assert.equal(await animated.locator('[data-avc-key^="n-"]').count(), last.variables.nodes.length);
+    }
+    if (algorithm === 'b-plus-tree') {
+      assert.equal(await animated.locator('[data-avc-key^="x-"] [data-role="arrow"]').count(),
+        last.variables.nodes.filter(node => node.leaf && node.next != null).length);
+    }
+    if (algorithm === 'multiway-merge') {
+      assert.deepEqual(await animated.locator('[data-layer="c-output"] [data-avc-key^="val-"] text').allTextContents(),
+        run.result.map(String));
+    }
     const tableText=await page.locator('.c-state-tables').innerText();
     assert.doesNotMatch(tableText,/undefined|NaN/);
     if(tree) assert.match(tableText,/查询结果.*查询键/s);
     await page.click('#prevBtn');
     assert.equal(await page.locator('#code-lines .active').count(),1);
+    assert.equal(await page.locator('[data-explain-host] .bsviz-caption').textContent(), run.steps.at(-2).description);
+    if (tree || algorithm === 'optimal-merge-tree') {
+      assert.equal(await animated.locator('[data-avc-key^="n-"]').count(), run.steps.at(-2).variables.nodes.length);
+    }
+    await page.locator('[data-tl-ruler]').press('Home');
+    if (tree) assert.equal(await animated.locator('[data-avc-key^="n-"]').count(), 0);
     const answer=await page.request.post(base+'/api/agent/explain',{
       data:{runId:run.runId,stepIndex:1,question:'解释本步',hintLevel:2}
     });
@@ -89,6 +110,24 @@ try {
   await page.click('#startBtn');
   assert.deepEqual((await (await buildPending).json()).result.queries,[]);
   await page.locator('#c-edit').waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(base + '/#workbench?algorithm=b-plus-tree');
+  await page.fill('#c-data', Array.from({ length: 64 }, (_, i) => i).join(','));
+  await page.click('#c-next');
+  const largePending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/b-plus-tree/runs'));
+  await page.click('#startBtn');
+  const largeResponse = await largePending;
+  assert.equal(largeResponse.status(), 200);
+  const large = await largeResponse.json();
+  await page.locator('#c-edit').waitFor();
+  await page.locator('[data-tl-ruler]').press('End');
+  const treeSvg = page.locator('[data-layer="c-search-tree"] svg');
+  assert.equal(await treeSvg.locator('[data-avc-key^="n-"]').count(), large.result.nodes.length);
+  assert.equal(await treeSvg.locator('[data-avc-key^="x-"] [data-role="arrow"]').count(),
+    large.result.nodes.filter(node => node.leaf && node.next != null).length);
+  assert.ok(await page.locator('[data-viz-body]').evaluate(body => body.scrollWidth > body.clientWidth));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
   await selectWorkbenchAlgorithm(page,'binary-search');
   await page.click('#fillDemo');
   await page.click('#startBtn');

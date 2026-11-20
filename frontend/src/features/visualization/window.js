@@ -3,19 +3,21 @@
  */
 
 import { dAlgorithm } from '../workbench/d-algorithms.js';
-import { createDStateTable } from './d-state-table.js';
-import { gAlgorithm } from '../workbench/g-algorithms.js';
-import { createGStateTable } from './g-state-table.js';
-import { createLevelOrderTable } from './level-order-table.js';
-import { dataAlgorithm as cAlgorithm } from '../workbench/data-algorithms.js';
-import { createCStateTable } from './c-state-table.js';
-import { createUnionFindTable } from './union-find-table.js';
+import { createDAnimation } from './d-animation.js';
+import { gAlgorithm, isBinaryTraversal } from '../workbench/g-algorithms.js';
+import { createGAnimation } from './g-animation.js';
+import { eAlgorithm } from '../workbench/e-algorithms.js';
+import { createEAnimation, fullECanvasLabels } from './e-animation.js';
+import { fAlgorithm } from '../workbench/f-algorithms.js';
+import { createFAnimation } from './f-animation.js';
+import { cAlgorithm } from '../workbench/c-algorithms.js';
+import { createCAnimation } from './c-animation.js';
 import { createVisualization } from './index.js';
 import { arraySearch } from '../workbench/array-search.js';
 import { graphAlgorithm } from '../workbench/graph-algorithms.js';
-import { createExplanationPanel } from './explanation-panel.js';
-import { describeGraphStep } from './graph-explanation.js';
-import { buildGraphPreview } from './bfs-preview.js';
+import { createBAnimation, graphTableLabel } from './b-animation.js';
+import { isASort } from './a-sort-state.js';
+import { createASortVisualization } from './a-sort-view.js';
 import { buildPrototypeArrayFrame } from './prototype-array.js';
 import { createPlusView, plusCase, isPlus } from './ext/plus-bridge.js';
 
@@ -89,9 +91,14 @@ export function createVizWindow(host, {
   root.className = 'win vizwin';
   root.dataset.win = 'viz';
   const c = cAlgorithm(algorithm);
+  const f = fAlgorithm(algorithm);
   const g = gAlgorithm(algorithm);
-  const levelOrder = algorithm === 'binary-tree-level-order';
-  const scrollableTreeTable = g && !levelOrder;
+  const e = eAlgorithm(algorithm);
+  const d = dAlgorithm(algorithm);
+  const traceView = e ?? f ?? g ?? c ?? d;
+  const traceCanvasLabels = fullECanvasLabels(algorithm);
+  const binaryTraversal = isBinaryTraversal(algorithm);
+  const scrollTrace = traceView && !traceCanvasLabels;
   const unionFind = algorithm === 'union-find';
   /* 合并（PR #66 §1）：主分支把"排序"扩成 8 种，我们的 plus 示例也要用同一套窗口 */
   const sorting = SORT_ALGORITHMS.includes(algorithm);
@@ -111,42 +118,60 @@ export function createVizWindow(host, {
   }
   const custom = algorithm === 'custom-array';
   const graph = graphAlgorithm(algorithm);
+  const heapSort = algorithm === 'heap-sort';
+  const splitSort = heapSort || algorithm === 'merge-sort';
+  const fullCanvas = Boolean(graph || unionFind || splitSort || traceCanvasLabels);
+  const tableLabel = graphTableLabel(algorithm);
   const search = arraySearch(algorithm);
-  const useLegacy = !g && !c && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
+  const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
   root.innerHTML = TEMPLATE;
-  if (g) {
-    root.querySelector('.win-sub').textContent = g.title + ' · 执行状态';
-    root.querySelector('.vh-title').textContent = levelOrder ? '节点与队列' : '状态表';
-    root.querySelector('.vh-sub').textContent = g.title;
-    root.querySelector('.viewport-legend').hidden=true;
-    root.querySelector('[data-viz-replay]').hidden=true;
-  }
-  if (scrollableTreeTable) {
-    root.dataset.tableView = 'true';
-    root.querySelector('[data-viz-body]').setAttribute('aria-label', '执行状态表，可滚动查看');
-    root.querySelector('[data-viz-view-reset]').hidden = true;
-    root.querySelector('.viewport-hint').hidden = true;
-  }
-  if (c) {
-    root.querySelector('.win-sub').textContent=c.title + ' · 执行状态';
-    root.querySelector('.vh-title').textContent='状态表';
-    root.querySelector('.vh-sub').textContent=c.title;
-    root.querySelector('.viewport-legend').hidden=true;
-    root.querySelector('[data-viz-replay]').hidden=true;
+  if (tableLabel) {
+    root.dataset.graphView = 'split';
+    root.querySelector('.viewport-hint').textContent = '右侧动画：拖拽平移 · Ctrl + 滚轮缩放 · Home 复位';
+  } else if (graph) root.dataset.graphView = 'canvas';
+  if (traceView) {
+    root.querySelector('.win-sub').textContent = traceView.title + ' · 执行过程';
+    root.querySelector('.vh-sub').textContent = traceView.title;
+    root.querySelector('.viewport-legend').hidden = true;
+    if (traceCanvasLabels) {
+      const [title, label] = traceCanvasLabels;
+      root.dataset.traceCanvas = 'true';
+      root.querySelector('.vh-title').textContent = title;
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', label);
+    } else if (binaryTraversal) {
+      root.dataset.traceCanvas = 'true';
+      root.dataset.traceSplit = 'true';
+      root.querySelector('.vh-title').textContent = '二叉树与遍历状态';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧遍历状态，右侧二叉树');
+      root.querySelector('[data-viz-view-reset]').hidden = true;
+      root.querySelector('.viewport-hint').hidden = true;
+      const legend = root.querySelector('.viewport-legend');
+      legend.hidden = false;
+      legend.setAttribute('aria-label', '遍历图例');
+      legend.innerHTML = '<span><b class="legend-right">橙</b> 当前节点</span><span><b class="legend-mid">绿</b> 已访问</span><span><b class="legend-related">紫</b> 本步关联节点</span>';
+    } else {
+      root.dataset.traceAnimation = 'true';
+      root.dataset.tableView = 'true';
+      root.querySelector('.vh-title').textContent = '动画与状态';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '结构动画和执行状态，可滚动查看');
+      root.querySelector('[data-viz-view-reset]').hidden = true;
+      root.querySelector('.viewport-hint').hidden = true;
+    }
   }
   if (unionFind) {
-    root.querySelector('.win-sub').textContent = '并查集 · 执行状态';
-    root.querySelector('.vh-title').textContent = '父节点表';
+    root.querySelector('.win-sub').textContent = '并查集 · 父指针森林';
+    root.querySelector('.vh-title').textContent = '森林与父节点表';
     root.querySelector('.vh-sub').textContent = '按步骤更新';
     root.querySelector('.viewport-legend').hidden = true;
-    root.querySelector('[data-viz-replay]').hidden = true;
+    root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧父节点表，右侧父指针森林');
   }
   if (graph) {
-    root.querySelector('.win-sub').textContent = graph.name + ' · 图视图';
-    root.querySelector('.vh-title').textContent = '图结构';
+    const tableViewTitle = tableLabel ? '图与' + tableLabel : null;
+    root.querySelector('.win-sub').textContent = graph.name + ' · ' + (tableViewTitle ?? '图视图');
+    root.querySelector('.vh-title').textContent = tableViewTitle ?? '图结构';
     root.querySelector('.vh-sub').textContent = graph.title;
-    root.querySelector('[data-viz-body]').setAttribute('aria-label', '图视口，拖拽平移，按住 Ctrl 滚动缩放，Home自适应取景');
-    root.querySelector('[data-viz-replay]').hidden = true;
+    root.querySelector('[data-viz-body]').setAttribute('aria-label', tableLabel ? '左侧' + tableLabel + '，右侧图动画'
+      : '图视口，拖拽平移，按住 Ctrl 滚动缩放，Home自适应取景');
     root.querySelector('.viewport-legend').hidden = true;
   }
   
@@ -164,11 +189,18 @@ export function createVizWindow(host, {
       'selection-sort': '简单选择排序', 'quick-sort': '快速排序', 'heap-sort': '堆排序', 'merge-sort': '归并排序'
     };
     const sortName = sortNames[algorithm] || '排序';
-    root.querySelector('.win-sub').textContent = `${sortName} · 数组视图`;
+    const auxiliaryTitle = heapSort ? '堆树' : '临时数组';
+    const sortView = splitSort ? auxiliaryTitle + '与柱状图' : '数组视图';
+    root.querySelector('.win-sub').textContent = sortName + ' · ' + sortView;
+    root.querySelector('.vh-title').textContent = sortView;
     root.querySelector('.vh-sub').textContent = `${sortName} · 升序`;
     const legend = root.querySelector('.viewport-legend');
     legend.setAttribute('aria-label', '排序图例');
     legend.innerHTML = '<span><b class="legend-mid">绿</b> 已就位/最终位置</span><span><b class="legend-right">橙</b> 比较/操作</span>';
+    if (splitSort) {
+      root.dataset.sortView = 'split';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧' + auxiliaryTitle + '，右侧排序柱状图');
+    }
   }
   
   if (custom) {
@@ -209,34 +241,33 @@ export function createVizWindow(host, {
     fitFrame = requestAnimationFrame(() => { fitFrame = null; if (!destroyed) fitView(); });
   };
   let viz = null;
-  let graphPreview = null;
-  let unionFindTable = null;
-  let cStateTable = null;
-  let gStateTable = null;
-  let graphExplanation = null;
   let currentRun = run;
   let state = { stepIndex: 0, total: 0, playing: false, canPrev: false, canNext: false };
 
+  const cameraViewport = () => tableLabel ? scene.querySelector('.b-graph-viewport') : body;
+
   function applyView() {
-    scene.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+    const target = tableLabel ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
+    if (target) target.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   }
 
   function warnIfCanvasTiny() {
-    const w = Math.round(body.clientWidth);
-    const h = Math.round(body.clientHeight);
+    const surface = cameraViewport() ?? body;
+    const w = Math.round(surface.clientWidth);
+    const h = Math.round(surface.clientHeight);
     const tiny = w < 240 || h < 170;
     warn.hidden = !tiny;
-    if (tiny) warn.textContent = graph ? '可视区较小，可以点「全屏」放大查看。' : `可视区只有 ${w}×${h}px，数组会被压得很小：可以点「全屏」放大查看。`;
+    if (tiny) warn.textContent = graph || unionFind ? '可视区较小，可以点「全屏」放大查看。' : `可视区只有 ${w}×${h}px，数组会被压得很小：可以点「全屏」放大查看。`;
   }
 
   function fitView() {
     /* 合并（PR #66 §1）：主分支的可滚动树表不取景；plus 结构族卡片也不取景（各管各的 return） */
-    if (scrollableTreeTable) return;
+    if (scrollTrace) return;
     /* plus01&02 的**结构族**示例是"文档流卡片"（每层一张卡），本来就按容器宽度排好版，
        不能被视口的自动取景缩放：否则上一轮的 scale 会被继承/反复相乘，
        卡越走越小、最后看不见。这里对结构族 plus 运行只把视图复位成 1:1。
        数组族 plus 仍然走本项目的数组链路，照旧自动取景。 */
-    if (currentRun && currentRun.plus && currentRun.structure !== 'array') {
+    if (fullCanvas || (currentRun?.plus && currentRun.structure !== 'array')) {
       view.scale = 1; view.x = 0; view.y = 0;
       applyView();
       warnIfCanvasTiny();
@@ -257,7 +288,8 @@ export function createVizWindow(host, {
   let panning = false;
   let panStart = { x: 0, y: 0 };
   body.addEventListener('pointerdown', (event) => {
-    if (scrollableTreeTable || event.button !== 0 || event.target.closest?.('button, select, input, .bsviz-explain')) return;
+    if (scrollTrace || event.button !== 0 || event.target.closest?.('button, select, input, .bsviz-explain, .b-animation-data, .a-merge-track')) return;
+    if (!cameraViewport()?.contains(event.target)) return;
     body.focus({preventScroll:true});
     panning = true;
     panStart = { x: event.clientX - view.x, y: event.clientY - view.y };
@@ -275,9 +307,11 @@ export function createVizWindow(host, {
   body.addEventListener('pointerup', stopPan);
   body.addEventListener('pointercancel', stopPan);
   body.addEventListener('wheel', (event) => {
-    if (scrollableTreeTable || !event.ctrlKey || event.deltaY === 0) return;
+    if (scrollTrace || !event.ctrlKey || event.deltaY === 0) return;
+    const surface = cameraViewport();
+    if (!surface?.contains(event.target)) return;
     event.preventDefault();
-    const rect = body.getBoundingClientRect();
+    const rect = surface.getBoundingClientRect();
     const cx = event.clientX - rect.left - rect.width / 2;
     const cy = event.clientY - rect.top - rect.height / 2;
     const next = Math.min(view.max, Math.max(view.min, view.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
@@ -289,7 +323,7 @@ export function createVizWindow(host, {
   }, { passive: false });
 
   const onHomeKey = (event) => {
-    if (scrollableTreeTable || event.key !== 'Home') return;
+    if (scrollTrace || event.key !== 'Home') return;
     if (!host.contains(document.activeElement)) return;
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName ?? '')) return;
     event.preventDefault();
@@ -312,7 +346,7 @@ export function createVizWindow(host, {
       root.style.width = '';
       root.style.height = '';
     }
-    if (on) { root.setAttribute('role','dialog'); root.setAttribute('aria-modal','true'); root.setAttribute('aria-label', sorting ? '排序可视化' : '二分查找可视化'); }
+    if (on) { root.setAttribute('role','dialog'); root.setAttribute('aria-modal','true'); root.setAttribute('aria-label', traceView ? traceView.title + '可视化' : graph ? graph.title + '可视化' : unionFind ? '并查集可视化' : sorting ? '排序可视化' : '二分查找可视化'); }
     else { root.removeAttribute('role'); root.removeAttribute('aria-modal'); root.removeAttribute('aria-label'); }
     if (fullBtn) {
       fullBtn.textContent = on ? '退出全屏' : '全屏';
@@ -440,30 +474,24 @@ export function createVizWindow(host, {
     if (custom) applyCustomChrome(nextRun);
     if (viz) viz.destroy();
     scene.replaceChildren();
-    if (g) {
-      gStateTable = levelOrder ? createLevelOrderTable() : createGStateTable(algorithm, g);
-      scene.append(gStateTable.element);
-      graphExplanation = createExplanationPanel();
-      explainHost.replaceChildren(graphExplanation.explain);
+    if (e) {
+      viz = createEAnimation(vizHost, explainHost, nextRun, e);
+    } else if (f) {
+      viz = createFAnimation(vizHost, explainHost, nextRun, f);
+    } else if (g) {
+      viz = createGAnimation(vizHost, explainHost, nextRun, g);
     } else if (c) {
-      cStateTable=dAlgorithm(algorithm) ? createDStateTable(c) : createCStateTable(c);
-      scene.append(cStateTable.element);
-      graphExplanation=createExplanationPanel();
-      explainHost.replaceChildren(graphExplanation.explain);
-    } else if (unionFind) {
-      unionFindTable = createUnionFindTable(nextRun.input);
-      scene.append(unionFindTable.element);
-      graphExplanation = createExplanationPanel();
-      explainHost.replaceChildren(graphExplanation.explain);
-    } else if (graph) {
-      graphPreview = buildGraphPreview(nextRun.graph, graph.name);
-      scene.append(graphPreview.element);
-      graphExplanation = createExplanationPanel();
-      explainHost.replaceChildren(graphExplanation.explain);
+      viz = createCAnimation(vizHost, nextRun, c, explainHost);
+    } else if (d) {
+      viz = createDAnimation(vizHost, nextRun, d, explainHost);
+    } else if (graph || unionFind) {
+      viz = createBAnimation(vizHost, nextRun, explainHost);
     } else if (nextRun.plus) {
       // plus01&02 demo library: arrays keep this project's array visualization (only frameBuilder swapped);
       // other families use the new prototype (vendor/plus + plus-viz.css). Existing styles/animations untouched.
       viz = createPlusView(vizHost, nextRun, { explainContainer: explainHost });
+    } else if (isASort(nextRun.algorithm)) {
+      viz = createASortVisualization(vizHost, nextRun, explainHost);
     } else viz = createVisualization(vizHost, {
       run: nextRun,
       explainContainer: explainHost,
@@ -475,31 +503,11 @@ export function createVizWindow(host, {
 
   function setStep(step, nextState = {}) {
     state = { ...state, ...nextState };
-    if (gStateTable && step) {
-      gStateTable.showStep(step);
-      graphExplanation.caption.textContent = step.description;
-      graphExplanation.status.textContent = levelOrder
-        ? '访问顺序：' + (step.variables.order.join(' → ') || '空') + '。队列先进先出，孩子先左后右入队。'
-        : (step.done ? '运行结束' : '');
+    if (viz && step && (useLegacy || viz.getStep() !== step)) {
+      viz.showStep(step);
+      const explanation = explainHost.querySelector('.bsviz-explain-content');
+      if (explanation) explanation.scrollTop = 0;
     }
-    if (cStateTable && step) {
-      cStateTable.showStep(step);
-      graphExplanation.caption.textContent=step.description;
-      graphExplanation.status.textContent='第 ' + (step.stepIndex+1) + ' 步 · ' + (step.done ? '运行结束' : '状态表显示本步快照');
-    }
-    if (unionFindTable && step) {
-      unionFindTable.showStep(step, currentRun.steps[step.stepIndex - 1]);
-      graphExplanation.caption.textContent = step.description;
-      graphExplanation.status.textContent = '集合数量：' + step.variables.setCount +
-        (step.variables.findPath ? ' ｜ 查找路径：' + step.variables.findPath.join(' → ') : '');
-    }
-    if (graphPreview && step) {
-      graphPreview.showStep(step);
-      const { action, detail } = describeGraphStep(currentRun, step);
-      graphExplanation.caption.textContent = action;
-      graphExplanation.status.textContent = detail;
-    }
-    if (viz && step && (useLegacy || viz.getStep() !== step)) viz.showStep(step);
     const active = Boolean(currentRun && state.total > 0);
     const play = $('#playBtn');
     const label = state.playing ? '暂停' : '播放';
@@ -528,12 +536,12 @@ export function createVizWindow(host, {
   if (run) bindRun(run);
   else {
     const empty = document.createElement('p'); empty.className = 'viz-empty';
-    empty.textContent = levelOrder ? '填写节点与左右孩子，运行后查看队列及分层结果。' : g ? '填写输入或载入示例，运行后查看每一步的状态。' : c ? '填写输入并运行。动画视图待接入，当前使用状态表。' : unionFind ? '填写元素和操作，运行后查看父节点表。' : graph ? '填写顶点和边，再运行 ' + graph.name + '。' : '填入示例并开始分析，查看真实执行过程。'; scene.append(empty);
+    empty.textContent = traceView ? '填写输入或载入示例，运行后查看结构动画和状态。' : unionFind ? '填写元素和操作，运行后查看父指针森林和父节点表。' : graph ? '填写顶点和边，再运行 ' + graph.name + '。' : '填入示例并开始分析，查看真实执行过程。'; scene.append(empty);
     applyView();
   }
   setStep(run?.steps[0] ?? null, {stepIndex:run ? 0 : -1,total:run?.steps.length ?? 0,canPrev:false,canNext:Boolean(run && run.steps.length > 1),playing:false});
 
-  const observer = new ResizeObserver(queueFit); observer.observe(body);
+  const observer = new ResizeObserver(fullCanvas ? warnIfCanvasTiny : queueFit); observer.observe(body);
   const rulerObserver = new ResizeObserver(updateLabelDensity); rulerObserver.observe(ruler);
   const bar = $('.win-bar'); let drag = null;
   bar.addEventListener('pointerdown', event => {

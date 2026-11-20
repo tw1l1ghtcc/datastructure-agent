@@ -17,7 +17,7 @@ const examples = [
   ['singly-linked-list-insert', [1, 2, 3], '结点与链接'],
   ['singly-linked-list-delete', [2, 3], '结点与链接'],
   ['singly-linked-list-reverse', [6, 4, 2], '结点与链接'],
-  ['kth-from-end', { nodeId: 2, value: 1 }, '查找结果'],
+  ['kth-from-end', { nodeId: 2, value: 1 }],
   ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }, '转置输出'],
   ['radix-sort', [3, 10, 21, 21], '排序结果'],
   ['counting-sort', [-1, 0, 2, 2], '输出数组'],
@@ -29,12 +29,12 @@ const display = value => String(value ?? '—');
 
 const runPath = algorithm => '/api/algorithms/' + algorithm + '/runs';
 
-async function assertReverseCanvas(page) {
-  await page.waitForFunction(() => {
+async function assertFullCanvas(page, id) {
+  await page.waitForFunction(id => {
     const viewport = document.querySelector('[data-viz-body]');
-    const svg = viewport?.querySelector('[data-avc-svg="e-array"]');
+    const svg = viewport?.querySelector(`[data-avc-svg="${id}"]`);
     return svg && svg.viewBox.baseVal.width === viewport.clientWidth && svg.viewBox.baseVal.height === viewport.clientHeight;
-  });
+  }, id);
   assert.equal(await page.locator('.e-state-tables, .trace-animation-stage .canvas-card').count(), 0);
 }
 
@@ -105,12 +105,13 @@ try {
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
-    if (algorithm === 'array-list-reverse') {
-      await assertReverseCanvas(page);
+    if (algorithm === 'array-list-reverse' || algorithm === 'kth-from-end') {
+      const id = algorithm === 'array-list-reverse' ? 'e-array' : 'e-list';
+      await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
-      await assertReverseCanvas(page);
+      await assertFullCanvas(page, id);
       await page.keyboard.press('Escape');
-      await assertReverseCanvas(page);
+      await assertFullCanvas(page, id);
     }
     await page.click('#nextBtn');
     await assertStep(page, run, 1);
@@ -121,12 +122,26 @@ try {
         assert.equal(await svg.locator(`[data-avc-key="g-${index}"] rect`).getAttribute('stroke-width'), '2');
       }
     }
+    if (algorithm === 'kth-from-end') {
+      const svg = layer(page, 'e-list');
+      assert.equal(await svg.locator('[data-avc-key="nid-n0"]').textContent(), '#0');
+      assert.equal(await svg.locator('[data-avc-key="ptr-fast"]').textContent(), '快 fast');
+      assert.equal(await svg.locator('[data-avc-key="ptr-slow"]').textContent(), '慢 slow');
+    }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
+    if (algorithm === 'kth-from-end') {
+      const svg = layer(page, 'e-list');
+      assert.match(await svg.locator('[data-avc-key="name"]').textContent(), /找到结点 #2，值 1/);
+      assert.equal(await svg.locator('[data-avc-key="ne-n2-0"] line').getAttribute('stroke'), '#0a6b4a');
+    }
     if (title) assert.ok(await page.locator('.e-state-tables caption', { hasText: title }).count(), algorithm);
     await page.click('#prevBtn');
     const step = run.steps.at(-2);
     await assertStep(page, run, step.stepIndex);
+    if (algorithm === 'kth-from-end') {
+      assert.match(await layer(page, 'e-list').locator('[data-avc-key="name"]').textContent(), /fast = NULL/);
+    }
     const response = await page.request.post(base + '/api/agent/explain', {
       data: { runId: run.runId, stepIndex: step.stepIndex, question: '这一步改变了什么？', hintLevel: 2 },
     });
@@ -196,7 +211,7 @@ try {
     if (index) await page.click('#e-edit');
     await page.fill('#e-data', input.join(','));
     const run = await start(page, 'array-list-reverse');
-    await assertReverseCanvas(page);
+    await assertFullCanvas(page, 'e-array');
     assert.deepEqual(await cells(page, 'e-array'), input.map(String));
     if (input.length === 0) assert.match(await layer(page, 'e-array').textContent(), /顺序表为空/);
     if (input.length === 64) {
@@ -212,6 +227,27 @@ try {
     }
     await ruler.press('End');
     assert.deepEqual(await cells(page, 'e-array'), [...input].reverse().map(String));
+  }
+
+  await selectWorkbenchAlgorithm(page, 'kth-from-end');
+  const repeated = Array(64).fill(-2147483648);
+  for (const k of [64, 1]) {
+    await page.fill('#e-data', repeated.join(','));
+    await page.fill('#e-k', String(k));
+    const run = await start(page, 'kth-from-end');
+    await assertFullCanvas(page, 'e-list');
+    await ruler.press('End');
+    await assertStep(page, run, run.steps.length - 1);
+    assert.deepEqual(run.result, { nodeId: 64 - k, value: repeated[0] });
+    const svg = layer(page, 'e-list');
+    assert.equal(await svg.locator('[data-avc-key^="nid-"]').count(), 64);
+    assert.equal(await svg.locator(`[data-avc-key="ne-n${64 - k}-0"] line`).getAttribute('stroke'), '#0a6b4a');
+    assert.ok(await svg.evaluate(element => {
+      const box = element.querySelector('.avc-layer').getBBox();
+      const { width, height } = element.viewBox.baseVal;
+      return box.x >= -1 && box.y >= -1 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1;
+    }), '64 个结点、指针和结果都显示在画布内');
+    if (k === 64) await page.click('#e-edit');
   }
 
   for (const [algorithm, data] of [

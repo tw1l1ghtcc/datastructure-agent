@@ -58,16 +58,16 @@
 @media(max-width:760px){#visualization-panel{height:580px}.vizwin{resize:none}.vizwin .win-sub{display:initial}}
 @media(max-width:540px){#visualization-panel{height:560px}.vizwin .win-sub{display:none}.vizwin .win-action{padding:3px 5px}.vizwin .viewport{--step-explanation-inset:14px}.vizwin .viewport-head{margin-inline:12px;gap:4px}.vizwin .viewport-head .bl-btn{font-size:9px;padding:3px 5px}.vizwin .timeline{padding:10px 8px;gap:12px}.vizwin .tl-btn{width:26px;height:30px}.vizwin .viewport-hint{font-size:9px;left:12px}}
 #visualization-panel:has(.vizwin[data-graph-view="split"]) { height: 770px; }
-.vizwin:is([data-graph-view="canvas"], [data-graph-view="split"], [data-sort-view="split"], [data-array-view="canvas"]) .viewport-scene {
+.vizwin:is([data-graph-view="canvas"], [data-graph-view="split"], [data-sort-view="split"], [data-trace-canvas]) .viewport-scene {
   width: 100%;
   height: 100%;
   padding: 0;
 }
 .vizwin[data-graph-view="split"] .viewport-body { touch-action: auto; cursor: auto; }
 .vizwin[data-graph-view="split"] .viewport-body.is-panning .b-graph-viewport { cursor: grabbing; }
-.vizwin:is([data-graph-view], [data-array-view="canvas"]) .viewport-hint { position: static; grid-row: 4; padding: 4px 14px 10px; }
+.vizwin:is([data-graph-view], [data-trace-canvas]) .viewport-hint { position: static; grid-row: 4; padding: 4px 14px 10px; }
 
-#visualization-panel:has(.vizwin:is([data-trace-animation], [data-array-view="canvas"])) { height: 720px; }
+#visualization-panel:has(.vizwin:is([data-trace-animation], [data-trace-canvas])) { height: 720px; }
 .vizwin[data-trace-animation] .viewport-scene { width: max-content; min-width: 100%; padding: 6px 12px 14px; }
 .trace-animation-stage.plus-viz { width: max-content; height: auto; min-height: 0; overflow: visible; margin-bottom: 14px; }
 .trace-animation-full,

@@ -3,6 +3,10 @@ import { createEStateTable } from './e-state-table.js';
 import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
+export function usesFullECanvas(algorithm) {
+  return algorithm === 'array-list-reverse' || algorithm === 'kth-from-end';
+}
+
 function reverseFrame(step) {
   const { i, j } = step.variables;
   const cellLabels = step.array.map((_, index) => index === i ? 'i · ' + index : index === j ? 'j · ' + index : index);
@@ -33,7 +37,7 @@ function arrayFrame(step) {
 }
 
 const listId = id => id == null ? null : 'n' + id;
-function listFrame(step, previous) {
+function listFrame(step, previous, fitViewport) {
   const v = step.variables;
   const chain = linkedChain(v);
   const onChain = new Set(chain.map(node => node.id));
@@ -42,9 +46,11 @@ function listFrame(step, previous) {
   const otherChain = linkedChain({ nodes: v.nodes, headId: v.nextId }).filter(node => !onChain.has(node.id));
   const placed = new Set([...onChain, ...otherChain.map(node => node.id)]);
   const ordered = [...chain, ...otherChain, ...v.nodes.filter(node => !placed.has(node.id))];
+  const result = fitViewport ? step.result : null;
   const nodes = ordered.map(node => ({
     id: listId(node.id), value: node.value, next: listId(node.next),
-    badge: pointers.filter(([id]) => id === node.id).map(([, label]) => label).join('／'),
+    ...(fitViewport ? { label: '#' + node.id }
+      : { badge: pointers.filter(([id]) => id === node.id).map(([, label]) => label).join('／') }),
   }));
   const changed = previous ? v.nodes.filter(node => !oldLinks.has(node.id) || node.next !== oldLinks.get(node.id)) : [];
   const nodeW = Math.max(72, ...nodes.map(node => String(node.value).length * 9 + 14));
@@ -52,15 +58,22 @@ function listFrame(step, previous) {
   const perRow = Math.min(6, Math.max(2, nodes.length));
   const canvasWidth = 76 + perRow * nodeW + (perRow - 1) * gap;
   const canvasHeight = Math.max(168, 54 + Math.ceil(nodes.length / perRow) * 92);
+  const name = result?.nodeId != null ? `找到结点 #${result.nodeId}，值 ${result.value}`
+    : fitViewport && v.fastId === null ? '快指针已越过链尾（fast = NULL）' : '';
   return [linkLayer({
-    id: 'e-list', title: '链表节点与 next 指针', nodes, head: listId(v.headId), order: nodes.map(node => node.id),
+    id: 'e-list', title: fitViewport ? '链表与快慢指针' : '链表节点与 next 指针', name, nodes,
+    head: listId(v.headId), order: nodes.map(node => node.id),
     roles: {
       swap: [v.currId, v.fastId].map(listId).filter(Boolean),
-      focus2: [v.slowId, v.prevId].map(listId).filter(Boolean),
+      focus2: [result?.nodeId === v.slowId ? null : v.slowId, v.prevId].map(listId).filter(Boolean),
       added: changed.map(node => listId(node.id)),
-      done: step.done && step.algorithm === 'kth-from-end' && step.result?.nodeId != null ? [listId(step.result.nodeId)] : [],
+      done: result?.nodeId != null ? [listId(result.nodeId)] : [],
+      pointers: fitViewport ? [
+        { id: 'fast', node: listId(v.fastId), label: '快 fast' },
+        { id: 'slow', node: listId(v.slowId), label: '慢 slow' },
+      ].filter(pointer => pointer.node !== null) : [],
     },
-    props: { canvasWidth, canvasHeight, nodeW, nodeH: 36, gap },
+    props: { canvasWidth, canvasHeight, nodeW, nodeH: 36, gap, fitViewport },
   })];
 }
 
@@ -118,17 +131,16 @@ function countingFrame(run, step, init) {
 }
 
 export function createEAnimation(host, explainHost, run, config) {
-  if (run.algorithm === 'array-list-reverse') {
-    return createTraceAnimation(host, explainHost, null, reverseFrame, 'e', { run, config, fillViewport: true });
-  }
+  const fillViewport = usesFullECanvas(run.algorithm);
   const init = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
   const previous = step => run.steps[step.stepIndex - 1];
   const frames = {
-    array: arrayFrame,
-    linked: step => listFrame(step, previous(step)),
+    array: fillViewport ? reverseFrame : arrayFrame,
+    linked: step => listFrame(step, previous(step), fillViewport),
     matrix: matrixFrame,
     radix: step => radixFrame(step, previous(step)),
     counting: step => countingFrame(run, step, init),
   };
-  return createTraceAnimation(host, explainHost, createEStateTable(run, config), frames[config.view], 'e', { run, config });
+  const stateTable = fillViewport ? null : createEStateTable(run, config);
+  return createTraceAnimation(host, explainHost, stateTable, frames[config.view], 'e', { run, config, fillViewport });
 }

@@ -35,12 +35,8 @@ function listTables(step, previous) {
     const headChanged = previous && id === headId && previous.variables.headId !== headId;
     return linkChanged || target || headChanged ? [index] : [];
   });
-  const details = [table('当前链表（从表头开始）', ['结点编号', '值'], chain.map(node => [node.id, node.value])),
+  return [table('当前链表（从表头开始）', ['结点编号', '值'], chain.map(node => [node.id, node.value])),
     highlight(table('结点与链接', ['编号', '值', 'next 编号', '指针', '可达状态'], rows), changed)];
-  if (step.done && step.algorithm === 'kth-from-end') {
-    details.push(table('查找结果', ['结点编号', '值'], [[step.result.nodeId, step.result.value]]));
-  }
-  return details;
 }
 
 function tripleTable(title, triples, index) {

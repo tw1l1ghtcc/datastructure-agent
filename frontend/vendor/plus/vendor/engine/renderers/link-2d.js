@@ -33,6 +33,21 @@ function chainOrder(data) {
   return out;
 }
 
+function fitChain(rect, count, preferredWidth) {
+  const width = Math.max(1, rect.w - 56);
+  const height = Math.max(1, rect.h - 88);
+  const rowsAtDefaultHeight = Math.max(1, Math.floor(height / 50));
+  const perRow = Math.min(count, Math.max(Math.ceil(count / rowsAtDefaultHeight),
+    Math.floor((width + 40) / (preferredWidth + 40))));
+  const rows = Math.ceil(count / perRow);
+  const gap = Math.min(54, width / perRow * 0.28);
+  const nodeW = Math.max(1, Math.min(148, (width + gap) / perRow - gap));
+  const nodeH = Math.max(1, Math.min(64, height / rows * 0.54));
+  const rowGap = Math.min(nodeH + 72, height / rows);
+  const y0 = rect.y + Math.max(48, (rect.h - nodeH - (rows - 1) * rowGap) / 2);
+  return { nodeW, nodeH, gap, perRow, rowGap, y0 };
+}
+
 export function layout(layer, rect, env = {}) {
   const { data, props } = layer;
   const roles = norm(layer.roles);
@@ -46,15 +61,16 @@ export function layout(layer, rect, env = {}) {
     return { prims, nodes };
   }
 
-  const nodeW = props.nodeW ?? 92;
-  const nodeH = props.nodeH ?? 44;
-  const gap = props.gap ?? 46;
-  const pad = 18;
-  const perRow = Math.max(1, Math.floor((rect.w - pad * 2 + gap) / (nodeW + gap)));
-  const rows = Math.ceil(list.length / perRow);
-  const rowGap = nodeH + 54;
-  const totalH = rows * rowGap;
-  const y0 = rect.y + Math.max(20, (rect.h - totalH) / 2 + 8);
+  const preferredWidth = props.nodeW ?? 92;
+  const fitViewport = props.fitViewport;
+  const fixedNodeH = props.nodeH ?? 44;
+  const fixedGap = props.gap ?? 46;
+  const fixedPerRow = Math.max(1, Math.floor((rect.w - 36 + fixedGap) / (preferredWidth + fixedGap)));
+  const fixedRowGap = fixedNodeH + 54;
+  const { nodeW, nodeH, gap, perRow, rowGap, y0 } = fitViewport ? fitChain(rect, list.length, preferredWidth) : {
+    nodeW: preferredWidth, nodeH: fixedNodeH, gap: fixedGap, perRow: fixedPerRow, rowGap: fixedRowGap,
+    y0: rect.y + Math.max(20, (rect.h - Math.ceil(list.length / fixedPerRow) * fixedRowGap) / 2 + 8),
+  };
   const round = props.roundShape ? 10 : 0;
   const linkFirst = !!props.linkFirst;
 
@@ -63,8 +79,11 @@ export function layout(layer, rect, env = {}) {
     const r = Math.floor(i / perRow);
     const c = i % perRow;
     const cntInRow = Math.min(perRow, list.length - r * perRow);
-    const rowW = cntInRow * nodeW + (cntInRow - 1) * gap;
-    const x = rect.x + (rect.w - rowW) / 2 + c * (nodeW + gap);
+    const rowSlots = fitViewport ? perRow : cntInRow;
+    const rowW = rowSlots * nodeW + (rowSlots - 1) * gap;
+    // Keep row turns vertical when the full-canvas chain wraps.
+    const column = fitViewport && r % 2 ? perRow - 1 - c : c;
+    const x = rect.x + (rect.w - rowW) / 2 + column * (nodeW + gap);
     const y = y0 + r * rowGap;
     geo.set(n.id, { x, y, w: nodeW, h: nodeH });
     nodes.set(`node:${n.id}`, { x: x + nodeW / 2, y: y + nodeH / 2 });
@@ -156,7 +175,12 @@ export function layout(layer, rect, env = {}) {
         prims.push(P.text(`nft-${n.id}-${f.name}`, g.x + fw * (i + 0.5), g.y + g.h / 2, String(val), { size: 12, fill: st === 'idle' ? LINK.LinkNodeText : s.text, opacity: s.opacity }));
       });
     } else {
-      prims.push(P.text(`nv-${n.id}`, g.x + g.w / 2, g.y + g.h / 2, String(n.value ?? n.label ?? n.id), { size: 14, fill: st === 'idle' ? LINK.LinkNodeText : s.text, opacity: s.opacity }));
+      const value = String(n.value ?? n.label ?? n.id);
+      const size = fitViewport ? Math.max(5, Math.min(20, nodeH * 0.34, (nodeW - 7) / (value.length * 0.63))) : 14;
+      prims.push(P.text(`nv-${n.id}`, g.x + g.w / 2, g.y + g.h * (fitViewport ? 0.38 : 0.5), value,
+        { size, fill: st === 'idle' ? LINK.LinkNodeText : s.text, opacity: s.opacity }));
+      if (fitViewport && n.label) prims.push(P.text(`nid-${n.id}`, g.x + g.w / 2, g.y + g.h * 0.76, n.label,
+        { size: Math.min(12, nodeH * 0.27), fill: st === 'idle' ? UI.textMuted : s.text }));
     }
     if (n.badge) prims.push(P.text(`nb-${n.id}`, g.x + g.w / 2, g.y - 10, n.badge, { size: 10, fill: UI.textMuted }));
   };
@@ -182,7 +206,8 @@ export function layout(layer, rect, env = {}) {
   const tg = geo.get(tail.id);
   const tailNext = (data.links || []).find((l) => l.from === tail.id);
   if (!tailNext && !tail.next && tg) {
-    prims.push(P.text('null', tg.x + tg.w + 18, tg.y + tg.h / 2, '∧', { size: 16, fill: LINK.LinkNodeLine }));
+    const tailX = fitViewport && Math.floor((list.length - 1) / perRow) % 2 ? tg.x - 18 : tg.x + tg.w + 18;
+    prims.push(P.text('null', tailX, tg.y + tg.h / 2, '∧', { size: 16, fill: LINK.LinkNodeLine }));
   }
 
   // 头指针标记（LinkHead，独立于节点）
@@ -203,7 +228,8 @@ export function layout(layer, rect, env = {}) {
     const g = geo.get(p.node);
     if (!g) return;
     const tone = toneFor(i + 1);
-    const py = g.y + g.h + 16;
+    const gapBelow = fitViewport ? Math.min(16, (rowGap - g.h) / 2) : 16;
+    const py = g.y + g.h + gapBelow;
     prims.push(P.chip(`ptr-${p.id}`, g.x + g.w / 2, py, p.label, tone));
     prims.push(P.line(`ptr-line-${p.id}`, g.x + g.w / 2, py - 9, g.x + g.w / 2, g.y + g.h + 1, { stroke: tone.stroke, sw: 1, dash: [3, 2] }));
     nodes.set(`ptr:${p.id}`, { x: g.x + g.w / 2, y: py });

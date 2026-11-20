@@ -15,7 +15,7 @@ import { createCAnimation } from './c-animation.js';
 import { createVisualization } from './index.js';
 import { arraySearch } from '../workbench/array-search.js';
 import { graphAlgorithm } from '../workbench/graph-algorithms.js';
-import { createBAnimation, graphTableLabel } from './b-animation.js';
+import { createBAnimation, graphStateLabel } from './b-animation.js';
 import { isASort } from './a-sort-state.js';
 import { createASortVisualization } from './a-sort-view.js';
 import { buildPrototypeArrayFrame } from './prototype-array.js';
@@ -121,11 +121,11 @@ export function createVizWindow(host, {
   const heapSort = algorithm === 'heap-sort';
   const splitSort = heapSort || algorithm === 'merge-sort';
   const fullCanvas = Boolean(graph || unionFind || splitSort || traceCanvasLabels);
-  const tableLabel = graphTableLabel(algorithm);
+  const stateLabel = graphStateLabel(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
   root.innerHTML = TEMPLATE;
-  if (tableLabel) {
+  if (stateLabel) {
     root.dataset.graphView = 'split';
     root.querySelector('.viewport-hint').textContent = '右侧动画：拖拽平移 · Ctrl + 滚轮缩放 · Home 复位';
   } else if (graph) root.dataset.graphView = 'canvas';
@@ -166,11 +166,11 @@ export function createVizWindow(host, {
     root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧父节点表，右侧父指针森林');
   }
   if (graph) {
-    const tableViewTitle = tableLabel ? '图与' + tableLabel : null;
-    root.querySelector('.win-sub').textContent = graph.name + ' · ' + (tableViewTitle ?? '图视图');
-    root.querySelector('.vh-title').textContent = tableViewTitle ?? '图结构';
+    const stateViewTitle = stateLabel ? '图与' + stateLabel : null;
+    root.querySelector('.win-sub').textContent = graph.name + ' · ' + (stateViewTitle ?? '图视图');
+    root.querySelector('.vh-title').textContent = stateViewTitle ?? '图结构';
     root.querySelector('.vh-sub').textContent = graph.title;
-    root.querySelector('[data-viz-body]').setAttribute('aria-label', tableLabel ? '左侧' + tableLabel + '，右侧图动画'
+    root.querySelector('[data-viz-body]').setAttribute('aria-label', stateLabel ? '左侧' + stateLabel + '，右侧图动画'
       : '图视口，拖拽平移，按住 Ctrl 滚动缩放，Home自适应取景');
     root.querySelector('.viewport-legend').hidden = true;
   }
@@ -244,10 +244,10 @@ export function createVizWindow(host, {
   let currentRun = run;
   let state = { stepIndex: 0, total: 0, playing: false, canPrev: false, canNext: false };
 
-  const cameraViewport = () => tableLabel ? scene.querySelector('.b-graph-viewport') : body;
+  const cameraViewport = () => stateLabel ? scene.querySelector('.b-graph-viewport') : body;
 
   function applyView() {
-    const target = tableLabel ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
+    const target = stateLabel ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
     if (target) target.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   }
 

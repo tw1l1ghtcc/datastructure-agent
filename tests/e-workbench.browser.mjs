@@ -12,7 +12,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 });
 
 const examples = [
-  ['array-list-reverse', [5, 4, 3, 2, 1], '顺序表'],
+  ['array-list-reverse', [5, 4, 3, 2, 1]],
   ['array-list-delete-range', [1, 5], '逻辑长度 2'],
   ['singly-linked-list-insert', [1, 2, 3], '结点与链接'],
   ['singly-linked-list-delete', [2, 3], '结点与链接'],
@@ -28,6 +28,15 @@ const cells = (page, id) => layer(page, id).locator('[data-avc-key^="gv-"]').all
 const display = value => String(value ?? '—');
 
 const runPath = algorithm => '/api/algorithms/' + algorithm + '/runs';
+
+async function assertReverseCanvas(page) {
+  await page.waitForFunction(() => {
+    const viewport = document.querySelector('[data-viz-body]');
+    const svg = viewport?.querySelector('[data-avc-svg="e-array"]');
+    return svg && svg.viewBox.baseVal.width === viewport.clientWidth && svg.viewBox.baseVal.height === viewport.clientHeight;
+  });
+  assert.equal(await page.locator('.e-state-tables, .trace-animation-stage .canvas-card').count(), 0);
+}
 
 async function start(page, algorithm, status = 200) {
   const pending = page.waitForResponse(response => response.url().endsWith(runPath(algorithm)));
@@ -96,11 +105,25 @@ try {
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
+    if (algorithm === 'array-list-reverse') {
+      await assertReverseCanvas(page);
+      await page.locator('[data-viz-full]').click();
+      await assertReverseCanvas(page);
+      await page.keyboard.press('Escape');
+      await assertReverseCanvas(page);
+    }
     await page.click('#nextBtn');
     await assertStep(page, run, 1);
+    if (algorithm === 'array-list-reverse') {
+      const svg = layer(page, 'e-array');
+      for (const [index, label] of [[0, 'i · 0'], [4, 'j · 4']]) {
+        assert.equal(await svg.locator(`[data-avc-key="idx-${index}"]`).textContent(), label);
+        assert.equal(await svg.locator(`[data-avc-key="g-${index}"] rect`).getAttribute('stroke-width'), '2');
+      }
+    }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
-    assert.ok(await page.locator('.e-state-tables caption', { hasText: title }).count(), algorithm);
+    if (title) assert.ok(await page.locator('.e-state-tables caption', { hasText: title }).count(), algorithm);
     await page.click('#prevBtn');
     const step = run.steps.at(-2);
     await assertStep(page, run, step.stepIndex);
@@ -164,6 +187,32 @@ try {
   assert.deepEqual(await values(tableRows(page, '转置输出'), 1), ['63']);
   const matrixStep = await page.request.get(base + '/api/runs/' + matrix.runId + '/steps/' + (matrix.steps.length - 1));
   assert.deepEqual((await matrixStep.json()).step, matrix.steps.at(-1));
+
+  await selectWorkbenchAlgorithm(page, 'array-list-reverse');
+  await page.setViewportSize({ width: 1120, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const reverseInputs = [[], [0], Array.from({ length: 64 }, (_, index) => -2147483648 + index)];
+  for (const [index, input] of reverseInputs.entries()) {
+    if (index) await page.click('#e-edit');
+    await page.fill('#e-data', input.join(','));
+    const run = await start(page, 'array-list-reverse');
+    await assertReverseCanvas(page);
+    assert.deepEqual(await cells(page, 'e-array'), input.map(String));
+    if (input.length === 0) assert.match(await layer(page, 'e-array').textContent(), /顺序表为空/);
+    if (input.length === 64) {
+      await page.click('#nextBtn');
+      await assertStep(page, run, 1);
+      assert.deepEqual(await cells(page, 'e-array'), run.steps[1].array.map(String));
+      assert.equal(await layer(page, 'e-array').locator('[data-avc-key="idx-63"]').textContent(), 'j · 63');
+      assert.ok(await layer(page, 'e-array').evaluate(svg => {
+        const content = svg.getBBox();
+        return content.x >= 0 && content.y >= 0 && content.x + content.width <= svg.viewBox.baseVal.width &&
+          content.y + content.height <= svg.viewBox.baseVal.height;
+      }), '64 个元素都显示在画布内');
+    }
+    await ruler.press('End');
+    assert.deepEqual(await cells(page, 'e-array'), [...input].reverse().map(String));
+  }
 
   for (const [algorithm, data] of [
     ['radix-sort', { list: [1, -1] }],

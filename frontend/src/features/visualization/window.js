@@ -96,6 +96,8 @@ export function createVizWindow(host, {
   const e = eAlgorithm(algorithm);
   const d = dAlgorithm(algorithm);
   const traceView = e ?? f ?? g ?? c ?? d;
+  const arrayReverse = algorithm === 'array-list-reverse';
+  const scrollTrace = traceView && !arrayReverse;
   const unionFind = algorithm === 'union-find';
   /* 合并（PR #66 §1）：主分支把"排序"扩成 8 种，我们的 plus 示例也要用同一套窗口 */
   const sorting = SORT_ALGORITHMS.includes(algorithm);
@@ -117,7 +119,7 @@ export function createVizWindow(host, {
   const graph = graphAlgorithm(algorithm);
   const heapSort = algorithm === 'heap-sort';
   const splitSort = heapSort || algorithm === 'merge-sort';
-  const fullCanvas = Boolean(graph || unionFind || splitSort);
+  const fullCanvas = Boolean(graph || unionFind || splitSort || arrayReverse);
   const tableLabel = graphTableLabel(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
@@ -127,15 +129,20 @@ export function createVizWindow(host, {
     root.querySelector('.viewport-hint').textContent = '右侧动画：拖拽平移 · Ctrl + 滚轮缩放 · Home 复位';
   } else if (graph) root.dataset.graphView = 'canvas';
   if (traceView) {
-    root.dataset.traceAnimation = 'true';
-    root.dataset.tableView = 'true';
     root.querySelector('.win-sub').textContent = traceView.title + ' · 执行过程';
-    root.querySelector('.vh-title').textContent = '动画与状态';
+    root.querySelector('.vh-title').textContent = arrayReverse ? '顺序表' : '动画与状态';
     root.querySelector('.vh-sub').textContent = traceView.title;
     root.querySelector('.viewport-legend').hidden = true;
-    root.querySelector('[data-viz-body]').setAttribute('aria-label', '结构动画和执行状态，可滚动查看');
-    root.querySelector('[data-viz-view-reset]').hidden = true;
-    root.querySelector('.viewport-hint').hidden = true;
+    if (arrayReverse) {
+      root.dataset.arrayView = 'canvas';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '顺序表动画，i 和 j 标记交换位置');
+    } else {
+      root.dataset.traceAnimation = 'true';
+      root.dataset.tableView = 'true';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '结构动画和执行状态，可滚动查看');
+      root.querySelector('[data-viz-view-reset]').hidden = true;
+      root.querySelector('.viewport-hint').hidden = true;
+    }
   }
   if (unionFind) {
     root.querySelector('.win-sub').textContent = '并查集 · 父指针森林';
@@ -241,7 +248,7 @@ export function createVizWindow(host, {
 
   function fitView() {
     /* 合并（PR #66 §1）：主分支的可滚动树表不取景；plus 结构族卡片也不取景（各管各的 return） */
-    if (traceView) return;
+    if (scrollTrace) return;
     /* plus01&02 的**结构族**示例是"文档流卡片"（每层一张卡），本来就按容器宽度排好版，
        不能被视口的自动取景缩放：否则上一轮的 scale 会被继承/反复相乘，
        卡越走越小、最后看不见。这里对结构族 plus 运行只把视图复位成 1:1。
@@ -267,7 +274,7 @@ export function createVizWindow(host, {
   let panning = false;
   let panStart = { x: 0, y: 0 };
   body.addEventListener('pointerdown', (event) => {
-    if (traceView || event.button !== 0 || event.target.closest?.('button, select, input, .bsviz-explain, .b-animation-data, .a-merge-track')) return;
+    if (scrollTrace || event.button !== 0 || event.target.closest?.('button, select, input, .bsviz-explain, .b-animation-data, .a-merge-track')) return;
     if (!cameraViewport()?.contains(event.target)) return;
     body.focus({preventScroll:true});
     panning = true;
@@ -286,7 +293,7 @@ export function createVizWindow(host, {
   body.addEventListener('pointerup', stopPan);
   body.addEventListener('pointercancel', stopPan);
   body.addEventListener('wheel', (event) => {
-    if (traceView || !event.ctrlKey || event.deltaY === 0) return;
+    if (scrollTrace || !event.ctrlKey || event.deltaY === 0) return;
     const surface = cameraViewport();
     if (!surface?.contains(event.target)) return;
     event.preventDefault();
@@ -302,7 +309,7 @@ export function createVizWindow(host, {
   }, { passive: false });
 
   const onHomeKey = (event) => {
-    if (traceView || event.key !== 'Home') return;
+    if (scrollTrace || event.key !== 'Home') return;
     if (!host.contains(document.activeElement)) return;
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName ?? '')) return;
     event.preventDefault();

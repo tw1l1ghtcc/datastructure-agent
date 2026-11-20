@@ -132,9 +132,50 @@ export function layout(layer, rect, env = {}) {
 
 export const GRID_STYLES = [6];
 
+function layoutIndexedArray(layer, rect) {
+  const values = layer.data.values[0] ?? [];
+  const prims = [];
+  const nodes = new Map();
+  if (!values.length) {
+    prims.push(P.text('empty', rect.x + rect.w / 2, rect.y + rect.h / 2, '顺序表为空', { fill: UI.textMuted, size: 14 }));
+    return { prims, nodes };
+  }
+
+  const gap = 8;
+  const width = Math.max(1, rect.w - 32);
+  const height = Math.max(1, rect.h - 32);
+  const rowsAtDefaultHeight = Math.max(1, Math.floor((height + gap) / 44));
+  const columns = Math.min(values.length, Math.max(
+    Math.ceil(values.length / rowsAtDefaultHeight), Math.floor((width + gap) / 76)
+  ));
+  const rows = Math.ceil(values.length / columns);
+  const cellW = Math.max(1, Math.min(176, (width + gap) / columns - gap));
+  const cellH = Math.max(1, Math.min(124, (height + gap) / rows - gap));
+  const left = rect.x + (rect.w - columns * (cellW + gap) + gap) / 2;
+  const top = rect.y + (rect.h - rows * (cellH + gap) + gap) / 2;
+  const roles = norm(layer.roles);
+
+  values.forEach((value, index) => {
+    const x = left + index % columns * (cellW + gap);
+    const y = top + Math.floor(index / columns) * (cellH + gap);
+    const cx = x + cellW / 2;
+    const state = stateOf(roles, index);
+    const style = styleOf(state);
+    const label = String(value);
+    const size = Math.max(5, Math.min(25, cellH * 0.38, (cellW - 8) / (label.length * 0.65)));
+    const position = String(layer.data.cellLabels?.[index] ?? index);
+    prims.push(P.rect(`g-${index}`, x, y, cellW, cellH, { r: 7, fill: style.fill, stroke: style.stroke, sw: borderWidth(state) }));
+    prims.push(P.text(`gv-${index}`, cx, y + cellH * 0.38, label, { size, fill: style.text }));
+    prims.push(P.text(`idx-${index}`, cx, y + cellH * 0.79, position, { size: Math.min(13, cellH * 0.26), fill: state === 'idle' ? UI.textMuted : style.text }));
+    nodes.set(`cell:${index}`, { x: cx, y: y + cellH / 2 });
+  });
+  return { prims, nodes };
+}
+
 /** style 6：TArrayForm 的 TCanvas 平面表示（无 OpenGL 时的降级路径） */
 export function layoutGrid(layer, rect) {
   const { data, props } = layer;
+  if (props.indexedArray) return layoutIndexedArray(layer, rect);
   const roles = norm(layer.roles);
   const values = data.values || [];
   const prims = [];

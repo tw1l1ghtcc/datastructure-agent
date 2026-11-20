@@ -31,35 +31,41 @@ export function sequenceLayer(id, title, values, roles = {}, { first, indexBase 
   });
 }
 
-export function createTraceAnimation(host, explainHost, stateTable, frameFor, packageId, { run, config }) {
+export function createTraceAnimation(host, explainHost, stateTable, frameFor, packageId, { run, config, fillViewport = false }) {
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-' + packageId;
+  element.classList.toggle('trace-animation-full', fillViewport);
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz trace-animation-stage';
-  element.append(canvas, stateTable.element);
+  element.append(canvas);
+  if (stateTable) element.append(stateTable.element);
   host.append(element);
 
-  const stage = createStage(canvas);
+  const stage = createStage(canvas, { fillViewport });
   const { explain, caption, status } = createExplanationPanel();
   explainHost.replaceChildren(explain);
   let current = null;
 
-  function render(step) {
+  function render(step, options) {
     const layers = frameFor(step);
-    stage.render(layers);
+    stage.render(layers, options);
     const titleById = new Map(layers.map(layer => [layer.id, layer.title]));
     for (const svg of canvas.querySelectorAll('.avc-svg')) {
       svg.setAttribute('role', 'img');
       svg.setAttribute('aria-label', titleById.get(svg.dataset.avcSvg));
     }
   }
+  const observer = fillViewport ? new ResizeObserver(() => {
+    if (current) render(current, { animate: false });
+  }) : null;
+  observer?.observe(canvas);
 
   return {
     getStep: () => current,
     showStep(step) {
       current = step;
       render(step);
-      stateTable.showStep(step);
+      stateTable?.showStep(step);
       caption.textContent = step.description;
       status.textContent = describeStructuredStep(run, step, config, packageId);
     },
@@ -69,6 +75,7 @@ export function createTraceAnimation(host, explainHost, stateTable, frameFor, pa
       render(current);
     },
     destroy() {
+      observer?.disconnect();
       stage.clear();
       element.remove();
       explain.remove();

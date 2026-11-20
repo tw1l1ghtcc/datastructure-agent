@@ -3,6 +3,16 @@ import { createEStateTable } from './e-state-table.js';
 import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
+function reverseFrame(step) {
+  const { i, j } = step.variables;
+  const cellLabels = step.array.map((_, index) => index === i ? 'i · ' + index : index === j ? 'j · ' + index : index);
+  return [gridLayer({
+    id: 'e-array', title: '顺序表', values: [step.array], cellLabels,
+    roles: { swap: Number.isInteger(i) ? [i] : [], focus2: Number.isInteger(j) ? [j] : [] },
+    props: { indexedArray: true },
+  })];
+}
+
 function arrayFrame(step) {
   const { length, i, j, src, dst } = step.variables;
   const values = step.array;
@@ -108,6 +118,9 @@ function countingFrame(run, step, init) {
 }
 
 export function createEAnimation(host, explainHost, run, config) {
+  if (run.algorithm === 'array-list-reverse') {
+    return createTraceAnimation(host, explainHost, null, reverseFrame, 'e', { run, config, fillViewport: true });
+  }
   const init = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
   const previous = step => run.steps[step.stepIndex - 1];
   const frames = {

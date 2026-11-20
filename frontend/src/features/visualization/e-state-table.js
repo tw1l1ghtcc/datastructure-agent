@@ -14,8 +14,7 @@ function indexedTable(title, values, indices = []) {
 }
 
 function arrayTable(step) {
-  const { length, i, j, src, dst } = step.variables;
-  if (length === undefined) return [indexedTable('顺序表', step.array, [i, j])];
+  const { length, src, dst } = step.variables;
   const rows = step.array.map((value, index) => [index, value, index < length ? '有效' : '超出逻辑长度']);
   return [highlight(table('顺序表 · 逻辑长度 ' + length, ['下标', '存储值', '逻辑状态'], rows), [src, dst])];
 }

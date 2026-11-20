@@ -142,7 +142,7 @@ export function createVizWindow(host, {
       root.dataset.traceCanvas = 'true';
       root.dataset.traceSplit = 'true';
       root.querySelector('.vh-title').textContent = '二叉树与遍历状态';
-      const traversalLabel = algorithm === 'binary-tree-level-order' ? '左侧二叉树，右侧队列与分层访问结果' : '左侧遍历状态，右侧二叉树';
+      const traversalLabel = algorithm === 'binary-tree-level-order' ? '左侧队列与分层访问结果，右侧二叉树' : '左侧遍历状态，右侧二叉树';
       root.querySelector('[data-viz-body]').setAttribute('aria-label', traversalLabel);
       root.querySelector('[data-viz-view-reset]').hidden = true;
       root.querySelector('.viewport-hint').hidden = true;

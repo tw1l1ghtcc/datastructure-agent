@@ -98,7 +98,5 @@ export function createGAnimation(host, explainHost, run, config) {
   let state = null;
   if (levelOrder) state = createLevelOrderState();
   else if (run.algorithm !== 'tree-forest-conversion') state = createGStateTable(run.algorithm, config);
-  return createTraceAnimation(host, explainHost, state, step => treeFrame(step, fillViewport), 'g', {
-    run, config, fillViewport, stateOnRight: levelOrder,
-  });
+  return createTraceAnimation(host, explainHost, state, step => treeFrame(step, fillViewport), 'g', { run, config, fillViewport });
 }

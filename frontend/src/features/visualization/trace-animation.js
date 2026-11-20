@@ -33,7 +33,7 @@ export function sequenceLayer(id, title, values, roles = {}, { first, indexBase 
   });
 }
 
-export function createTraceAnimation(host, explainHost, stateView, frameFor, packageId, { run, config, fillViewport = false, stateOnRight = false }) {
+export function createTraceAnimation(host, explainHost, stateView, frameFor, packageId, { run, config, fillViewport = false }) {
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-' + packageId;
   element.classList.toggle('trace-animation-full', fillViewport);
@@ -43,7 +43,6 @@ export function createTraceAnimation(host, explainHost, stateView, frameFor, pac
   let viewport = canvas;
   if (split) {
     element.classList.add('trace-animation-split');
-    element.classList.toggle('trace-animation-state-right', stateOnRight);
     const state = document.createElement('div');
     state.className = 'trace-animation-state';
     state.setAttribute('role', 'region');
@@ -56,8 +55,7 @@ export function createTraceAnimation(host, explainHost, stateView, frameFor, pac
     viewport.setAttribute('aria-label', '二叉树画布');
     viewport.tabIndex = 0;
     viewport.append(canvas);
-    if (stateOnRight) element.append(viewport, state);
-    else element.append(state, viewport);
+    element.append(state, viewport);
   } else {
     element.append(canvas);
     if (stateView) element.append(stateView.element);

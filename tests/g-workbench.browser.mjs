@@ -57,10 +57,9 @@ async function assertTraversalLayout(page, algorithm) {
   const state = await page.locator('.trace-animation-state').boundingBox();
   const tree = await page.locator('.trace-animation-viewport').boundingBox();
   const levelOrder = algorithm === 'binary-tree-level-order';
-  const [left, right] = levelOrder ? [tree, state] : [state, tree];
   const canvas = await page.locator('[data-viz-body]').boundingBox();
-  assert.ok(tree.width > state.width && Math.abs(left.x + left.width - right.x) <= 1);
-  assert.ok(Math.abs(left.y - right.y) <= 1 && Math.abs(left.height - canvas.height) <= 1 && Math.abs(right.height - canvas.height) <= 1);
+  assert.ok(tree.width > state.width && Math.abs(state.x + state.width - tree.x) <= 1);
+  assert.ok(Math.abs(state.y - tree.y) <= 1 && Math.abs(state.height - canvas.height) <= 1 && Math.abs(tree.height - canvas.height) <= 1);
   assert.equal(await page.locator('.trace-animation-state table').count(), levelOrder ? 0 : 2);
   assert.equal(await page.locator('.trace-animation-state caption', { hasText: /节点关系/ }).count(), 0);
   assert.equal(await page.locator('.trace-animation-viewport .canvas-card').count(), 0);

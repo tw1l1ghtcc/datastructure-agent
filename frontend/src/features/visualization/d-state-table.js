@@ -32,16 +32,6 @@ export function createDStateTable(config){
       }
       views.push(buckets);
     }else{
-      const avl=Object.hasOwn(v,'checked')===false;
-      const nodes=table('节点表 · 根键 '+stateText(v.root),
-        avl ? ['键','左孩子','右孩子','高度','平衡因子'] : ['键','颜色','父节点','左孩子','右孩子'],
-        v.nodes.map(node=>avl ? [node.key,node.left,node.right,node.height,node.bf] : [node.key,node.color==='R'?'红':'黑',node.parent,node.left,node.right]));
-      const current=v.z??v.path?.at(-1)??v.key;
-      for(const row of nodes.tBodies[0].rows){
-        row.dataset.current=String(current!==null&&current!==undefined&&Number(row.cells[0].textContent)===current);
-        row.dataset.found=String(step.event==='found'&&Number(row.cells[0].textContent)===v.searchResult);
-      }
-      views.push(nodes);
       views.push(table('本步状态',['字段','内容'],[
         ['阶段',({insert:'插入',search:'查询',fixup:'修复'})[v.phase]??v.phase],
         ['路径',v.path],['旋转类型',v.rotation],['失衡节点',v.unbalancedAt],['修复情形',v.fixupCase]

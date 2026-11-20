@@ -69,8 +69,8 @@ function treeFrame(step, fitViewport) {
     ];
   }
   if (step.algorithm === 'tree-forest-conversion') {
-    const forest = tree('g-forest', '有序森林', v.forestNodes, { roots: v.roots, current, selected: [v.edge?.to] });
-    const binary = tree('g-binary', '左孩子／右兄弟表示', v.binaryNodes, { roots: [v.root], current, selected: [v.edge?.to] });
+    const forest = tree('g-forest', '有序森林', v.forestNodes, { roots: v.roots, current, selected: [v.edge?.to], preserveLabels: true });
+    const binary = tree('g-binary', '左孩子／右兄弟表示', v.binaryNodes, { roots: [v.root], current, selected: [v.edge?.to], preserveLabels: true });
     return v.mode === 'to-forest' ? [binary, forest] : [forest, binary];
   }
   const forest = step.algorithm === 'tree-forest-traversal';
@@ -94,6 +94,8 @@ function treeFrame(step, fitViewport) {
 
 export function createGAnimation(host, explainHost, run, config) {
   const fillViewport = isBinaryTraversal(run.algorithm);
-  const table = run.algorithm === 'binary-tree-level-order' ? createLevelOrderTable() : createGStateTable(run.algorithm, config);
+  let table = null;
+  if (run.algorithm === 'binary-tree-level-order') table = createLevelOrderTable();
+  else if (run.algorithm !== 'tree-forest-conversion') table = createGStateTable(run.algorithm, config);
   return createTraceAnimation(host, explainHost, table, step => treeFrame(step, fillViewport), 'g', { run, config, fillViewport });
 }

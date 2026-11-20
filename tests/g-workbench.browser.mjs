@@ -20,7 +20,7 @@ const examples = [
   ['binary-tree-level-order', ['A', 'B', 'C', 'D'], /分层访问结果/],
   ['binary-tree-reconstruction', { root: 'A', nodes: [{ id: 'A', left: 'B', right: 'C' }, { id: 'B', left: null, right: 'D' }, { id: 'D', left: null, right: null }, { id: 'C', left: null, right: null }] }, /重建区间/],
   ['threaded-binary-tree', ['B', 'D', 'A', 'C'], /前驱线索/],
-  ['tree-forest-conversion', { root: 'A', nodes: [{ id: 'A', left: 'B', right: 'D' }, { id: 'B', left: null, right: 'C' }, { id: 'C', left: null, right: null }, { id: 'D', left: null, right: null }] }, /左孩子右兄弟表示/],
+  ['tree-forest-conversion', { root: 'A', nodes: [{ id: 'A', left: 'B', right: 'D' }, { id: 'B', left: null, right: 'C' }, { id: 'C', left: null, right: null }, { id: 'D', left: null, right: null }] }],
   ['tree-forest-traversal', ['A', 'B', 'C', 'D'], /访问顺序/],
   ['huffman-coding', ['00', '01', '1'], /码字表/],
   ['binary-search-tree', [3, 4, 5, 7], /中序结果/],
@@ -154,7 +154,8 @@ try {
     await assertStep(page, run, 1);
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
-    assert.match(await page.locator('.level-order-tables').innerText(), caption, id);
+    if (caption) assert.match(await page.locator('.level-order-tables').innerText(), caption, id);
+    else assert.equal(await page.locator('.g-state-tables').count(), 0, id);
     if (retainedCaptions[id]) {
       assert.deepEqual(await page.locator('.g-state-tables caption').allTextContents(), retainedCaptions[id]);
     }

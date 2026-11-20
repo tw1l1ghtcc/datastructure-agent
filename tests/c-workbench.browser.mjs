@@ -69,6 +69,14 @@ try {
     }
     const tableText=await page.locator('.c-state-tables').innerText();
     assert.doesNotMatch(tableText,/undefined|NaN/);
+    if (algorithm === 'optimal-merge-tree') {
+      const state = page.locator('.c-state-tables');
+      assert.deepEqual(await state.locator('caption').allTextContents(), ['候选段']);
+      const rows = await state.locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent)));
+      assert.deepEqual(rows, last.variables.candidates.map(id => [
+        String(id), String(last.variables.nodes.find(node => node.id === id).weight),
+      ]));
+    }
     if(tree) assert.match(tableText,/查询结果.*查询键/s);
     await page.click('#prevBtn');
     assert.equal(await page.locator('#code-lines .active').count(),1);

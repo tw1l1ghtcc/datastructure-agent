@@ -96,7 +96,13 @@ try {
       await checkFrame(animation, run.steps[step]);
     }
     assert.match(await view.innerText(),/查询结果/);
-    assert.equal(await view.locator('[data-found="true"]').count(),1,id);
+    if (tree) {
+      assert.deepEqual(await view.locator('caption').allTextContents(), ['本步状态', '查询结果']);
+      const found = primitive(animation.locator('[data-avc-svg="d-tree"]'), 'n-k' + run.steps.at(-1).variables.searchResult);
+      assert.equal(await found.locator('circle').getAttribute('stroke'), '#0a6b4a');
+    } else {
+      assert.equal(await view.locator('[data-found="true"]').count(),1,id);
+    }
     if(!tree && id!=='hash-chaining') {
       const slots=await view.locator('table').first().locator('tbody tr').evaluateAll(rows=>rows.map(row=>row.cells[1].textContent));
       assert.deepEqual(slots,run.result.map(value=>value===null?'空':String(value)));

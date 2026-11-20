@@ -6,16 +6,6 @@ function markCurrent(element, index) {
   return element;
 }
 
-function binaryTable(nodes, title, current, labels) {
-  return markCurrent(table(title, ['节点', ...labels], nodes.map(({ id, left, right }) => [id, left, right])),
-    nodes.findIndex(node => node.id === current));
-}
-
-function forestTable(nodes, roots, current) {
-  return markCurrent(table('有序森林 · 根节点 ' + showList(roots), ['节点', '孩子（按顺序）'],
-    nodes.map(node => [node.id, showList(node.children)])), nodes.findIndex(node => node.id === current));
-}
-
 function stackTable(stack, withPhase = true) {
   const columns = withPhase ? ['节点', '层号', '当前阶段'] : ['节点', '层号'];
   const rows = stack.map(frame => withPhase ? [frame.id, frame.level, framePhases[frame.phase]] : [frame.id, frame.level]);
@@ -75,13 +65,6 @@ export function createGStateTable(algorithm, config) {
           break;
         case 'threaded-binary-tree':
           tables = threaded(v);
-          break;
-        case 'tree-forest-conversion':
-          tables = [
-            forestTable(v.forestNodes, v.roots, v.currentNode),
-            binaryTable(v.binaryNodes, '左孩子右兄弟表示 · 根节点 ' + (v.root ?? '空'), v.currentNode, ['首个孩子', '右兄弟']),
-          ];
-          if (v.mode === 'to-forest') tables.reverse();
           break;
         case 'tree-forest-traversal':
           tables = [stackTable(v.stack, false), orderTable(v.order)];

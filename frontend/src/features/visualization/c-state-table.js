@@ -30,7 +30,6 @@ export function createCStateTable(config) {
           views.push(tree);
           if (v.leafKeys) views.push(table('叶链中的键',['按顺序排列'],[[v.leafKeys]]));
         } else {
-          views.push(table('归并节点',['ID','权重','左孩子 ID','右孩子 ID'],v.nodes.map(node=>[node.id,node.weight,node.left,node.right])));
           views.push(table('候选段',['节点 ID','权重'],(v.candidates ?? []).map(id=>[id,v.nodes.find(node=>node.id===id)?.weight])));
         }
       }

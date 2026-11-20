@@ -197,18 +197,6 @@ export function createPlusView(host, run, { explainContainer = null } = {}) {
   };
 }
 
-/** 给算法菜单用的章节数据：[[章节名, [[id, 名称], …]], …] */
-export function plusMenuChapters() {
-  const byPkg = new Map();
-  for (const c of PLUS_CASES) {
-    if (!byPkg.has(c.pkg)) byPkg.set(c.pkg, []);
-    byPkg.get(c.pkg).push([c.id, c.title]);
-  }
-  return [...byPkg.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([pkg, rows]) => ['示例库 · ' + (PKG_NAME[pkg] || pkg), rows]);
-}
-
 /* ----------------------------------------------------------------------------
  * 样例库（给工作台的「填入示例」用）
  *

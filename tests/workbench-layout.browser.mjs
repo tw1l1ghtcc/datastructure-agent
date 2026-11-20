@@ -13,6 +13,9 @@ try {
  page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.status()>=400)failures.push(r.url());});
  await page.addInitScript(()=>{window.__steps=[];document.addEventListener('workbench:step',e=>window.__steps.push(e.detail));});
  await page.goto(base);await page.waitForFunction(()=>document.querySelector('#exercise-load-status').textContent.includes('10'));
+ const menu = page.locator('#algorithm-chapters');
+ assert.equal(await menu.locator('[data-algorithm-choice^="plus:"]').count(), 0);
+ assert.equal(await menu.locator('[data-algorithm-choice]').count(), 50);
  assert.equal(await page.locator('#tutor-window').isVisible(),false);
  await page.click('#fillDemo');await page.click('#startBtn');await page.waitForFunction(()=>window.__steps.at(-1)?.stepIndex===0);
  await page.click('#nextBtn');await page.waitForTimeout(350);

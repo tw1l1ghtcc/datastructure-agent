@@ -3,7 +3,6 @@ import { gAlgorithm, gAlgorithmIds } from './g-algorithms.js';
 import { dAlgorithm, dAlgorithmIds } from './d-algorithms.js';
 import { cAlgorithm, cAlgorithmIds } from './c-algorithms.js';
 import { graphAlgorithm, graphAlgorithmIds } from './graph-algorithms.js';
-import { plusMenuChapters } from '../visualization/ext/plus-bridge.js';
 
 const chapters = [
   ['第二章 · 线性表', eAlgorithmsIn('list')],
@@ -26,9 +25,6 @@ const chapters = [
   ]],
   ['自定义', [['custom-array', '自定义代码']]]
 ];
-
-// plus01&02 demo library: 54 examples grouped by package (data only; menu markup/CSS untouched)
-chapters.push(...plusMenuChapters());
 
 export function createAlgorithmMenu(root, onSelect) {
   const trigger = root.querySelector('#algorithm-trigger');

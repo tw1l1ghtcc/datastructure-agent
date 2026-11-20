@@ -2,7 +2,8 @@ const motionQuery = '(prefers-reduced-motion: reduce)';
 const slideTiming = { duration: 240, easing: 'cubic-bezier(.22,.68,.32,1)' };
 
 export function createTraversalList(algorithm) {
-  const queue = algorithm === 'bfs';
+  const levelOrder = algorithm === 'binary-tree-level-order';
+  const queue = algorithm === 'bfs' || levelOrder;
   const key = queue ? 'queue' : 'stack';
   const title = queue ? '队列' : '栈';
   const element = document.createElement('div');
@@ -23,6 +24,11 @@ export function createTraversalList(algorithm) {
   lane.className = 'b-traversal-lane';
   const scroll = document.createElement('div');
   scroll.className = 'b-traversal-scroll';
+  if (levelOrder) {
+    scroll.tabIndex = 0;
+    scroll.setAttribute('role', 'region');
+    scroll.setAttribute('aria-label', '层序遍历队列');
+  }
   const cells = document.createElement('ol');
   cells.className = 'b-traversal-cells';
   cells.setAttribute('role', 'list');
@@ -56,7 +62,8 @@ export function createTraversalList(algorithm) {
   }
 
   function showStep(step) {
-    const next = step.variables[key];
+    const entries = step.variables[key];
+    const next = levelOrder ? entries.map(entry => entry.id) : entries;
     const direction = index === null ? 0 : step.stepIndex - index;
     index = step.stepIndex;
     const adjacent = Math.abs(direction) === 1;
@@ -83,7 +90,7 @@ export function createTraversalList(algorithm) {
       const box = oldBounds.get(removed);
       const ghost = document.createElement('div');
       ghost.className = 'b-traversal-cell';
-      ghost.textContent = removed;
+      for (const child of oldCells.get(removed).childNodes) ghost.append(child.cloneNode(true));
       exits.append(ghost);
       ghost.style.left = (box.left - laneBounds.left) + 'px';
       ghost.style.top = (box.top - laneBounds.top) + 'px';
@@ -92,13 +99,24 @@ export function createTraversalList(algorithm) {
       slide(ghost, offscreen(box), true).onfinish = () => ghost.remove();
     }
 
-    const newCells = next.map(value => {
+    const newCells = next.map((value, index) => {
       const existing = oldCells.get(value);
       if (existing) return existing;
       const cell = document.createElement('li');
       cell.className = 'b-traversal-cell';
-      cell.textContent = value;
-      cell.title = value;
+      if (levelOrder) {
+        const node = document.createElement('span');
+        node.className = 'g-level-order-node';
+        node.textContent = value;
+        const level = document.createElement('span');
+        level.className = 'g-level-order-level';
+        level.textContent = '第 ' + entries[index].level + ' 层';
+        cell.append(node, level);
+        cell.title = value + ' · ' + level.textContent;
+      } else {
+        cell.textContent = value;
+        cell.title = value;
+      }
       return cell;
     });
     cells.replaceChildren(...newCells);

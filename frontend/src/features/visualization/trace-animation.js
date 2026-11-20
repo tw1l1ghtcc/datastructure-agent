@@ -33,32 +33,34 @@ export function sequenceLayer(id, title, values, roles = {}, { first, indexBase 
   });
 }
 
-export function createTraceAnimation(host, explainHost, stateTable, frameFor, packageId, { run, config, fillViewport = false }) {
+export function createTraceAnimation(host, explainHost, stateView, frameFor, packageId, { run, config, fillViewport = false, stateOnRight = false }) {
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-' + packageId;
   element.classList.toggle('trace-animation-full', fillViewport);
-  const split = fillViewport && stateTable;
+  const split = fillViewport && stateView;
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz trace-animation-stage';
   let viewport = canvas;
   if (split) {
     element.classList.add('trace-animation-split');
+    element.classList.toggle('trace-animation-state-right', stateOnRight);
     const state = document.createElement('div');
     state.className = 'trace-animation-state';
     state.setAttribute('role', 'region');
     state.setAttribute('aria-label', '遍历状态');
     state.tabIndex = 0;
-    state.append(stateTable.element);
+    state.append(stateView.element);
     viewport = document.createElement('div');
     viewport.className = 'trace-animation-viewport';
     viewport.setAttribute('role', 'region');
     viewport.setAttribute('aria-label', '二叉树画布');
     viewport.tabIndex = 0;
     viewport.append(canvas);
-    element.append(state, viewport);
+    if (stateOnRight) element.append(viewport, state);
+    else element.append(state, viewport);
   } else {
     element.append(canvas);
-    if (stateTable) element.append(stateTable.element);
+    if (stateView) element.append(stateView.element);
   }
   host.append(element);
 
@@ -103,7 +105,7 @@ export function createTraceAnimation(host, explainHost, stateTable, frameFor, pa
     showStep(step) {
       current = step;
       render(step);
-      stateTable?.showStep(step);
+      stateView?.showStep(step);
       caption.textContent = step.description;
       status.textContent = describeStructuredStep(run, step, config, packageId);
     },
@@ -114,6 +116,7 @@ export function createTraceAnimation(host, explainHost, stateTable, frameFor, pa
     },
     destroy() {
       observer?.disconnect();
+      stateView?.destroy?.();
       stage.clear();
       element.remove();
       explain.remove();

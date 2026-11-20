@@ -48,18 +48,20 @@ const layer = (page, id) => page.locator('[data-viz-engine="plus-g"] [data-avc-s
 const rows = (page, title) => page.locator('.trace-animation-state table').filter({ has: page.locator('caption', { hasText: title }) })
   .locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent)));
 
-async function assertTraversalLayout(page) {
+async function assertTraversalLayout(page, algorithm) {
   await page.waitForFunction(() => {
     const viewport = document.querySelector('.trace-animation-viewport');
     const svg = viewport?.querySelector('[data-avc-svg="g-tree"]');
     return svg && svg.viewBox.baseVal.width === viewport.clientWidth && svg.viewBox.baseVal.height === viewport.clientHeight;
   });
-  const left = await page.locator('.trace-animation-state').boundingBox();
-  const right = await page.locator('.trace-animation-viewport').boundingBox();
+  const state = await page.locator('.trace-animation-state').boundingBox();
+  const tree = await page.locator('.trace-animation-viewport').boundingBox();
+  const levelOrder = algorithm === 'binary-tree-level-order';
+  const [left, right] = levelOrder ? [tree, state] : [state, tree];
   const canvas = await page.locator('[data-viz-body]').boundingBox();
-  assert.ok(right.width > left.width && Math.abs(left.x + left.width - right.x) <= 1);
+  assert.ok(tree.width > state.width && Math.abs(left.x + left.width - right.x) <= 1);
   assert.ok(Math.abs(left.y - right.y) <= 1 && Math.abs(left.height - canvas.height) <= 1 && Math.abs(right.height - canvas.height) <= 1);
-  assert.equal(await page.locator('.trace-animation-state table').count(), 2);
+  assert.equal(await page.locator('.trace-animation-state table').count(), levelOrder ? 0 : 2);
   assert.equal(await page.locator('.trace-animation-state caption', { hasText: /节点关系/ }).count(), 0);
   assert.equal(await page.locator('.trace-animation-viewport .canvas-card').count(), 0);
   assert.ok(Number(await layer(page, 'g-tree').locator('[data-avc-key^="n-n"] circle').first().getAttribute('r')) > 17);
@@ -109,8 +111,11 @@ async function assertStep(page, run, index) {
     await assertTree(page, 'g-tree', v.nodes, { threaded: step.algorithm === 'threaded-binary-tree' });
     if (isBinaryTraversal(step.algorithm)) {
       if (v.queue) {
-        assert.deepEqual(await rows(page, '队列'), v.queue.map(({ id, level }) => [id, String(level)]));
-        assert.deepEqual(await rows(page, '分层访问结果'), v.levels.map((ids, index) => [String(index + 1), ids.join(' → ')]));
+        const queue = page.locator('.g-level-order-state .b-traversal-cells');
+        assert.deepEqual(await queue.locator('.g-level-order-node').allTextContents(), v.queue.map(entry => entry.id));
+        assert.deepEqual(await queue.locator('.g-level-order-level').allTextContents(), v.queue.map(entry => '第 ' + entry.level + ' 层'));
+        const visited = page.locator('.g-level-order-levels > li');
+        assert.deepEqual(await visited.locator(':scope > span').allTextContents(), v.levels.map((_, index) => '第 ' + (index + 1) + ' 层'));
       } else {
         assert.deepEqual(await rows(page, '递归栈'), v.stack.map(({ id, level, phase }) => [id, String(level), framePhases[phase]]));
         assert.deepEqual(await rows(page, '访问顺序'), v.order.map((id, index) => [String(index + 1), id]));
@@ -144,18 +149,20 @@ try {
     assert.deepEqual(actual, result, id);
     await assertStep(page, run, 0);
     if (isBinaryTraversal(id)) {
-      await assertTraversalLayout(page);
+      await assertTraversalLayout(page, id);
       await page.locator('[data-viz-full]').click();
-      await assertTraversalLayout(page);
+      await assertTraversalLayout(page, id);
       await page.keyboard.press('Escape');
-      await assertTraversalLayout(page);
+      await assertTraversalLayout(page, id);
     }
     await page.click('#nextBtn');
     await assertStep(page, run, 1);
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
-    if (caption) assert.match(await page.locator('.level-order-tables').innerText(), caption, id);
-    else assert.equal(await page.locator('.g-state-tables').count(), 0, id);
+    if (caption) {
+      const state = id === 'binary-tree-level-order' ? '.g-level-order-state' : '.level-order-tables';
+      assert.match(await page.locator(state).innerText(), caption, id);
+    } else assert.equal(await page.locator('.g-state-tables').count(), 0, id);
     if (retainedCaptions[id]) {
       assert.deepEqual(await page.locator('.g-state-tables caption').allTextContents(), retainedCaptions[id]);
     }

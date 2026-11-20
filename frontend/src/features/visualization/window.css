@@ -75,8 +75,10 @@
 .trace-animation-full .trace-animation-stage.plus-viz { margin: 0; overflow: hidden; }
 .vizwin[data-trace-split] .viewport-body { cursor: auto; touch-action: auto; }
 .trace-animation-split { display: grid; grid-template: minmax(0, 1fr) / clamp(176px, 31%, 300px) minmax(0, 1fr); }
+.trace-animation-state-right { grid-template-columns: minmax(0, 1fr) clamp(220px, 35%, 360px); }
 .trace-animation-state, .trace-animation-viewport { min-width: 0; min-height: 0; overflow: auto; }
 .trace-animation-state { padding: 0 8px 8px; background: var(--bl-panel); }
+.trace-animation-state-right .trace-animation-state { padding: 14px 14px 12px 6px; }
 .trace-animation-state .uf-table caption { text-align: left; padding: 5px 0; font-weight: 600; }
 .trace-animation-state .uf-table :is(th, td) { border-color: var(--bl-line); padding: 4px 6px; overflow-wrap: anywhere; }
 .trace-animation-state .uf-table th { position: sticky; top: 0; background: var(--bl-head); }

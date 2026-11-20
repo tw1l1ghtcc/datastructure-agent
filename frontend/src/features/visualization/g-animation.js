@@ -1,6 +1,6 @@
 import { treeLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createGStateTable } from './g-state-table.js';
-import { createLevelOrderTable } from './level-order-table.js';
+import { createLevelOrderState } from './level-order-state.js';
 import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 import { isBinaryTraversal } from '../workbench/g-algorithms.js';
 
@@ -78,7 +78,7 @@ function treeFrame(step, fitViewport) {
   const title = forest ? '有序森林' : threaded ? '二叉树 · 虚线为前驱／后继线索' : '二叉树';
   const preserveLabels = forest || step.algorithm === 'binary-tree-reconstruction' || step.algorithm === 'binary-search-tree';
   const layers = [tree('g-tree', title, v.nodes, {
-    roots: forest ? v.roots : [v.root], current, visited: order, selected: [v.edge?.to ?? v.childNode], threaded, fitViewport, preserveLabels,
+    roots: forest ? v.roots : [v.root], current, visited: order, selected: [v.edge?.to ?? v.childNode ?? v.queuedNode?.id], threaded, fitViewport, preserveLabels,
   })];
   if (fitViewport) return layers;
   if (v.queue) layers.push(sequenceLayer('g-queue', '队列（队首在左）', v.queue.map(entry => entry.id)));
@@ -94,8 +94,11 @@ function treeFrame(step, fitViewport) {
 
 export function createGAnimation(host, explainHost, run, config) {
   const fillViewport = isBinaryTraversal(run.algorithm);
-  let table = null;
-  if (run.algorithm === 'binary-tree-level-order') table = createLevelOrderTable();
-  else if (run.algorithm !== 'tree-forest-conversion') table = createGStateTable(run.algorithm, config);
-  return createTraceAnimation(host, explainHost, table, step => treeFrame(step, fillViewport), 'g', { run, config, fillViewport });
+  const levelOrder = run.algorithm === 'binary-tree-level-order';
+  let state = null;
+  if (levelOrder) state = createLevelOrderState();
+  else if (run.algorithm !== 'tree-forest-conversion') state = createGStateTable(run.algorithm, config);
+  return createTraceAnimation(host, explainHost, state, step => treeFrame(step, fillViewport), 'g', {
+    run, config, fillViewport, stateOnRight: levelOrder,
+  });
 }

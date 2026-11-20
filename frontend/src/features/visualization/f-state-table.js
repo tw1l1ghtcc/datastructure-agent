@@ -1,7 +1,5 @@
 import { stateText } from '../workbench/c-algorithms.js';
 
-const resultInExplanation = new Set(['bracket-matching', 'expression-evaluation', 'expression-dag']);
-
 function table(caption, headers, rows, selected = () => false) {
   const element = document.createElement('table');
   element.className = 'uf-table';
@@ -61,12 +59,6 @@ function graphTables(algorithm, input, v) {
   return tables;
 }
 
-function outcome(algorithm, value) {
-  if (value?.error) return value.error;
-  if (algorithm === 'critical-path') return '工期 ' + value.duration + (value.morePaths ? '，表中展示前 8 条关键路径' : '');
-  return value?.value ?? value;
-}
-
 export function createFStateTable(config, algorithm, input) {
   const element = document.createElement('div');
   element.className = 'c-state-tables';
@@ -89,9 +81,6 @@ export function createFStateTable(config, algorithm, input) {
         ] : [];
         if (algorithm === 'expression-evaluation') stacks.unshift(table('操作数栈（底到顶）', ['值'], v.stack.map(value => [value])));
         views = config.chapter === 6 ? [...graphTables(algorithm, input, v), ...stacks] : stacks;
-      }
-      if (step.done && !resultInExplanation.has(algorithm)) {
-        views.unshift(table('运行结果', ['结果'], [[outcome(algorithm, step.result)]]));
       }
       element.replaceChildren(...views);
     },

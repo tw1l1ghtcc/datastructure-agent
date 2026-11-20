@@ -72,9 +72,11 @@ function stringDetails(run, step) {
     case 'critical-path': {
       const endpoints = v.currentEdge?.slice(0, 2);
       const current = v.currentNode;
-      return fields([['活动', endpoints?.join(' → ')], ['工期', v.currentEdge?.[2]], ['当前事件', v.currentNode],
+      const details = fields([['活动', endpoints?.join(' → ')], ['工期', v.currentEdge?.[2]], ['当前事件', v.currentNode],
         ['最早时刻', current == null ? null : v.earliest[current]], ['最迟时刻', current == null ? null : v.latest[current]],
         ['关键活动', v.criticalEdges.length + ' 项'], ['事件数量', !endpoints && !v.currentNode ? input.nodes.length : null]]);
+      if (step.done && step.result?.morePaths) details.push('表中仅展示前 8 条关键路径');
+      return details;
     }
     default:
       return fields([['当前词元', v.token], ['操作数栈（底到顶）', step.algorithm === 'expression-evaluation' ? v.stack : null],

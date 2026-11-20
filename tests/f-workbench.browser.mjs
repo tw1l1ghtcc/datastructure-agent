@@ -17,7 +17,7 @@ const cases = [
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
   { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
   { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/, conclusion: /根节点结果为 25/ },
-  { id: 'critical-path', result: 5, field: 'duration', caption: /关键路径/ },
+  { id: 'critical-path', result: 5, field: 'duration', caption: /关键路径/, conclusion: /总工期为 5/ },
 ];
 
 const layer = (page, name) => page.locator('[data-viz-engine="plus-f"] [data-avc-svg="f-' + name + '"]');
@@ -89,6 +89,10 @@ try {
   });
   browser = await chromium.launch({ channel: process.env.TEST_BROWSER_CHANNEL || 'msedge', headless: true });
   const page = await browser.newPage();
+  const explanation = page.locator('[data-explain-host]');
+  const stateTables = page.locator('.c-state-tables');
+  const rows = title => stateTables.locator('table')
+    .filter({ has: page.locator('caption', { hasText: title }) }).locator('tbody tr');
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base);
@@ -109,10 +113,15 @@ try {
     await assertStep(page, run, 1);
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
-    assert.match(await page.locator('.c-state-tables').innerText(), caption, id);
-    const resultTable = page.locator('.c-state-tables caption', { hasText: '运行结果' });
-    assert.equal(await resultTable.count(), conclusion ? 0 : 1, id);
-    if (conclusion) assert.match(await page.locator('[data-explain-host] .bsviz-caption').textContent(), conclusion, id);
+    assert.match(await stateTables.innerText(), caption, id);
+    assert.equal(await stateTables.locator('caption', { hasText: '运行结果' }).count(), 0, id);
+    if (conclusion) assert.match(await explanation.locator('.bsviz-caption').textContent(), conclusion, id);
+    if (id === 'infix-to-postfix') {
+      assert.deepEqual(await rows('后缀序列').locator('td:first-child').allTextContents(), result);
+    }
+    if (id === 'naive-string-match' || id === 'kmp') {
+      assert.equal(await rows('匹配位置').locator('td').textContent(), result.join('、'));
+    }
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
     await assertStep(page, run, index);
@@ -139,13 +148,28 @@ try {
   const cycle = await (await cycleResponse).json();
   await assertStep(page, cycle, 0);
   await page.click('[data-t="last"]');
-  assert.match(await page.locator('.c-state-tables').innerText(), /有向环/);
   await assertStep(page, cycle, cycle.steps.length - 1);
+  assert.match(await explanation.locator('.bsviz-caption').textContent(), /有向环/);
   const invalid = await page.request.post(base + '/api/algorithms/critical-path/runs', {
     data: { nodes: ['A'], edges: [['A', 'B', 1]], directed: true },
   });
   assert.equal(invalid.status(), 400);
   assert.equal((await invalid.json()).error.code, 'INVALID_INPUT');
+  await page.click('#c-edit');
+  await page.fill('#c-data', 'A, B');
+  await page.fill('#f-secondary', Array(9).fill('A, B, 1').join('\n'));
+  const manyPathsResponse = page.waitForResponse(response => response.url().endsWith('/api/algorithms/critical-path/runs'));
+  await page.click('#startBtn');
+  const manyPathsRun = await (await manyPathsResponse).json();
+  assert.equal(manyPathsRun.result.morePaths, true);
+  await page.click('[data-t="last"]');
+  await assertStep(page, manyPathsRun, manyPathsRun.steps.length - 1);
+  assert.equal(await rows('关键路径').count(), 8);
+  const stepStatus = explanation.locator('.bsviz-status');
+  assert.match(await stepStatus.textContent(), /表中仅展示前 8 条关键路径/);
+  await page.click('#prevBtn');
+  await assertStep(page, manyPathsRun, manyPathsRun.steps.length - 2);
+  assert.doesNotMatch(await stepStatus.textContent(), /前 8 条/);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.click('#c-edit');

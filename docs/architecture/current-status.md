@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新：2026-11-20。工作台动画汇总基于 main 的 `e945ab3`（[PR #66](https://github.com/tw1l1ghtcc/datastructure-agent/pull/66)）。本轮 54 项中有 47 项算法实现已合入该基线。本地工作台另接入 F 包七项，计入原有二分查找和冒泡排序后共 56 项内置算法。交付分工见[最终进度](../team/final/progress.md)，历史见[第一次任务归档](../team/phase-1/README.md)。
+工作台动画汇总接入 A 到 G 包的 54 项算法，计入原有二分查找和冒泡排序后共 56 项内置算法。交付分工见[最终进度](../team/final/progress.md)，历史见[第一次任务归档](../team/phase-1/README.md)。
 
 ## 已接入的程序
 
@@ -9,7 +9,7 @@
 | 内置算法 | A 到 G 包及原有二分查找和冒泡排序。56 项由服务端生成步骤，共用播放、查询和源码高亮 | [最终进度](../team/final/progress.md)、[A包验收](../team/final/a-validation.md) |
 | 五页导航 | 课程目录、算法工作台、学习笔记、过程练习、错题与记录；支持地址直达及浏览器历史导航 | [工作台说明](../../frontend/src/features/workbench/README.md) |
 | 课程目录与笔记 | 八章、71 个目录入口。二分查找和冒泡排序的笔记可打开并选中对应算法，默认启动进入工作台 | [PR #38](https://github.com/tw1l1ghtcc/datastructure-agent/pull/38)、[PR #42](https://github.com/tw1l1ghtcc/datastructure-agent/pull/42) |
-| 动画与代码 | A 包主图使用 Plus 帧适配器，堆图和归并临时区直接用 Plus。B、C、E、F、G 及 D 包平衡树和哈希使用 Plus SVG 舞台并保留状态表。二分、顺序和分块查找沿用数组视图。 | [动画说明](../../frontend/src/features/visualization/README.md) |
+| 动画与代码 | A 包主图使用 Plus 帧适配器，堆排序和归并排序使用双栏动画。B、C、E、F、G 及 D 包平衡树和哈希使用 Plus SVG 舞台，按算法显示所需状态。二分、顺序和分块查找沿用数组视图。 | [动画说明](../../frontend/src/features/visualization/README.md) |
 | 自定义代码 | Windows x64 本机使用随仓库提供的 Open Watcom 编译受限 C/C++ 数组函数，按实际数组写入回放并高亮源码 | [本地使用](../../README.md#自定义代码)、[API 契约](api-contract.md) |
 | 步骤聊天 | 56 项内置算法接入当前步骤问答，携带当前/上一步、源码及最近最多10轮；排序使用真实排序变量。默认DeepSeek Flash，显式Mock优先；新排序真实模型效果尚未专项评估 | [Agent说明](../../backend/src/agent/README.md)、[A包验收](../team/final/a-validation.md) |
 | 聊天窗口 | 接近整屏高度；点击外部、缩小键或Escape收起，保留草稿/历史/等待中的回答；未运行或等待回复时也能写草稿，发送需有效运行且无进行中的请求 | PR #29/#30；对话球回弹PR #31已撤回并关闭 |
@@ -30,7 +30,7 @@
 
 - 独立全流程复核、真实模型对比及可复核用量/输出证据仍需完善；现有Mock和本地桩结果不代替这些工作。
 - 真实访谈、学生试用与匿名汇总以可核验证据为准。仓库已合并展示材料、两份设计说明书，课程平台提交情况另行确认。
-- F 包七项已在本地工作台接入，团队交叉复核与主分支合并待完成。
+- F 包七项已接入工作台，团队交叉复核待完成。
 - 整程序入口沿用 PR #66 的集成。算法菜单显示 56 项内置算法和自定义代码。
 
 ## 文档和检查的适用范围

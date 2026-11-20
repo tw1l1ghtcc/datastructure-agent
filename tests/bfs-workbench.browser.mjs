@@ -10,6 +10,24 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   env: { ...process.env, PORT: '0', HOST: '127.0.0.1', AGENT_MOCK: 'true', RATE_LIMIT: 'false' },
   windowsHide: true
 });
+
+async function assertFullCanvas(page) {
+  await page.waitForFunction(() => {
+    const body = document.querySelector('[data-graph-view="canvas"] [data-viz-body]');
+    const svg = body?.querySelector('.b-animation-stage > svg');
+    return svg && Math.abs(svg.viewBox.baseVal.width - body.clientWidth) <= 1 &&
+      Math.abs(svg.viewBox.baseVal.height - body.clientHeight) <= 1;
+  });
+  const stage = page.locator('.b-animation-stage');
+  assert.equal(await stage.locator('> svg').count(), 1);
+  assert.equal(await stage.locator('.canvas-card').count(), 0);
+  const occupiedWidth = await stage.locator('> svg').evaluate(svg => {
+    const circles = Array.from(svg.querySelectorAll('[data-graph-node] circle'), circle => circle.parentElement.parentElement.getBoundingClientRect());
+    return (Math.max(...circles.map(box => box.right)) - Math.min(...circles.map(box => box.left))) / svg.getBoundingClientRect().width;
+  });
+  assert.ok(occupiedWidth >= 0.55, '图节点应在可视区横向展开，实际比例 ' + occupiedWidth);
+}
+
 let browser;
 try {
   const base = await new Promise((resolve, reject) => {
@@ -21,7 +39,7 @@ try {
     });
   });
   browser = await chromium.launch({ channel: process.env.TEST_BROWSER_CHANNEL || 'msedge', headless: true });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ reducedMotion: 'reduce' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base + '/#workbench?algorithm=bfs');
@@ -67,6 +85,7 @@ try {
   await page.locator('[data-viz-engine="plus-graph"]').waitFor();
   const isolated = page.locator('[data-graph-node="E"] circle');
   await isolated.waitFor();
+  await assertFullCanvas(page);
   assert.equal(await page.locator('#bfs-fields').isHidden(), true);
   assert.equal(await page.locator('#fillDemo').isHidden(), true);
   assert.equal(await page.locator('#bfs-run-detail').innerText(), '无向图 · 5 个顶点 · 3 条边 · 起点 A');
@@ -172,6 +191,11 @@ try {
     assert.equal(await page.locator('[data-explain-host] .bsviz-caption').innerText(), graphRun.steps.at(-1).description);
     assert.ok((await page.locator('[data-explain-host] .bsviz-status').innerText()).length > 10, algorithm);
     assert.equal(await page.locator('[data-viz-engine="plus-graph"] [data-graph-node]').count(), graphRun.graph.nodes.length);
+    if (algorithm === 'floyd' || algorithm === 'topological-sort') {
+      assert.equal(await page.locator('.b-animation-stage .canvas-card').count(), 1);
+    } else {
+      await assertFullCanvas(page);
+    }
     if (algorithm === 'kruskal') {
       const selected = page.locator('[data-layer="b-graph"] [data-avc-key^="e-"] line[stroke="#0a6b4a"]');
       assert.equal(await selected.count(), graphRun.result.selectedEdges.length);
@@ -226,6 +250,51 @@ try {
   await page.locator('[data-tl-ruler]').press('End');
   await page.locator('[data-tl-ruler]').press('Home');
   assert.equal(await edge('e-D-D').locator('[data-role="arrow"]').count(), 1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertFullCanvas(page);
+  const viewport = page.locator('[data-viz-body]');
+  const scene = page.locator('[data-viz-scene]');
+  const scale = () => scene.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).a);
+  await viewport.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100, clientX: 140, clientY: 340 });
+  assert.ok(await scale() > 1);
+  await page.locator('#nextBtn').click();
+  assert.ok(await scale() > 1);
+  await page.locator('[data-viz-view-reset]').click();
+  assert.equal(await scale(), 1);
+  const bounds = await viewport.boundingBox();
+  const startX = bounds.x + bounds.width / 2;
+  const startY = bounds.y + bounds.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 32, startY + 20);
+  await page.mouse.up();
+  assert.ok(await scene.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).e) > 0);
+  await page.locator('[data-viz-view-reset]').click();
+  await page.locator('[data-viz-full]').click();
+  await assertFullCanvas(page);
+  await page.keyboard.press('Escape');
+  await assertFullCanvas(page);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+  await page.click('#bfs-edit');
+  await page.click('#bfs-back');
+  const denseNodes = ['A', 'B', 'C', 'D', 'E', ...Array.from({ length: 25 }, (_, i) => 'N' + (i + 1))];
+  await page.fill('#bfs-nodes', denseNodes.join(', '));
+  await page.click('#bfs-next');
+  const densePending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/bfs/runs'));
+  await page.click('#startBtn');
+  assert.equal((await densePending).status(), 200);
+  await page.locator('#bfs-edit').waitFor();
+  await assertFullCanvas(page);
+  const denseGraph = page.locator('.b-animation-stage > svg');
+  assert.equal(await denseGraph.locator('[data-graph-node]').count(), 30);
+  assert.ok(await denseGraph.evaluate(svg => {
+    const box = svg.querySelector('.avc-layer').getBBox();
+    const { width, height } = svg.viewBox.baseVal;
+    return box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height;
+  }), '30 个顶点及其图元均在画布内');
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   await selectWorkbenchAlgorithm(page, 'binary-search');
   await page.click('#fillDemo');

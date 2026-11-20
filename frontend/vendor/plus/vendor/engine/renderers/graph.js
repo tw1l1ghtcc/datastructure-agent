@@ -83,7 +83,7 @@ export function layout(layer, rect, env = {}) {
     }
   });
 
-  const nodeR = Math.min(22, Math.max(14, R / Math.max(4, n) + 12));
+  const nodeR = props.nodeRadius ?? Math.min(22, Math.max(14, R / Math.max(4, n) + 12));
 
   // ---- 边
   for (const e of edges) {
@@ -105,7 +105,7 @@ export function layout(layer, rect, env = {}) {
     prims.push(route ? P.poly(edgeKey, route.points, paint) : P.line(edgeKey, x1, y1, x2, y2, paint));
     if (e.w != null && props.weighted !== false) {
       const [labelX, labelY] = route?.label ?? [(x1 + x2) / 2, (y1 + y2) / 2 - 10];
-      prims.push(P.chip(key(`w-${e.from}-${e.to}`), labelX, labelY, String(e.w), { size: 10, fill: '#ffffff', stroke: st.stroke, color: st.stroke }));
+      prims.push(P.chip(key(`w-${e.from}-${e.to}`), labelX, labelY, String(e.w), { size: props.edgeLabelSize ?? 10, fill: '#ffffff', stroke: st.stroke, color: st.stroke }));
     }
   }
 
@@ -118,8 +118,8 @@ export function layout(layer, rect, env = {}) {
     const fill = st !== 'idle' ? s.fill : nd.fill || '#eef4ff';
     const stroke = st !== 'idle' ? s.stroke : nd.stroke || LINK.LinkNodeFrame;
     prims.push(P.circle(`n-${nd.id}`, p[0], p[1], nodeR, { fill, stroke, sw: borderWidth(st) + 0.4, opacity: s.opacity, z: 3 }));
-    prims.push(P.text(`nv-${nd.id}`, p[0], p[1], String(nd.label ?? nd.id), { size: 12, fill: st !== 'idle' ? s.text : UI.text, z: 4, opacity: s.opacity }));
-    if (nd.sub != null) prims.push(P.text(`ns-${nd.id}`, p[0], p[1] + nodeR + 11, String(nd.sub), { size: 9, fill: UI.textMuted, z: 4 }));
+    prims.push(P.text(`nv-${nd.id}`, p[0], p[1], String(nd.label ?? nd.id), { size: props.nodeLabelSize ?? 12, fill: st !== 'idle' ? s.text : UI.text, z: 4, opacity: s.opacity }));
+    if (nd.sub != null) prims.push(P.text(`ns-${nd.id}`, p[0], p[1] + nodeR + 11, String(nd.sub), { size: props.nodeDetailSize ?? 9, fill: UI.textMuted, z: 4 }));
     if (nd.badge) prims.push(P.chip(`nb-${nd.id}`, p[0], p[1] - nodeR - 12, nd.badge, toneFor(0)));
     nodes.set(`node:${nd.id}`, { x: p[0], y: p[1] });
   }

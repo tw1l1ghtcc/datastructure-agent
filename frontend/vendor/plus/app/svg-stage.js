@@ -57,12 +57,28 @@ function hasChild(el, child) {
   return false;
 }
 
-export function createStage(host) {
+export function createStage(host, { fillViewport = false } = {}) {
   const doc = (host && host.ownerDocument) || globalThis.document;
   let cards = new Map();          // layerId -> { card, svg, group, byKey:Map, id, height }
   let lastMetrics = { cards: 0, prims: 0, styles: [], created: 0, updated: 0, removed: 0, anim: {} };
 
   function makeCard(layer, index) {
+    const svg = doc.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'avc-svg');
+    svg.setAttribute('data-avc-svg', layer.id);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.style.width = '100%';
+    const group = doc.createElementNS(SVG_NS, 'g');
+    group.setAttribute('class', 'avc-layer');
+    svg.appendChild(group);
+    const record = { svg, group, byKey: new Map(), id: layer.id, height: CARD_CANVAS_HEIGHT };
+    if (fillViewport) {
+      svg.setAttribute('data-layer', layer.id);
+      svg.style.height = '100%';
+      host.appendChild(svg);
+      return { ...record, card: svg };
+    }
+
     const card = doc.createElement('div');
     card.className = 'canvas-card' + (index === 0 ? ' main' : '');
     card.dataset.layer = layer.id;
@@ -78,20 +94,12 @@ export function createStage(host) {
 
     const wrap = doc.createElement('div');
     wrap.className = 'avc-svg-wrap';
-    const svg = doc.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('class', 'avc-svg');
-    svg.setAttribute('data-avc-svg', layer.id);
-    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    svg.style.width = '100%';
     svg.style.height = CARD_CANVAS_HEIGHT + 'px';
-    const group = doc.createElementNS(SVG_NS, 'g');
-    group.setAttribute('class', 'avc-layer');
-    svg.appendChild(group);
     wrap.appendChild(svg);
     card.appendChild(wrap);
     host.appendChild(card);
 
-    return { card, svg, group, byKey: new Map(), id: layer.id, height: CARD_CANVAS_HEIGHT };
+    return { ...record, card };
   }
 
   function syncCards(layers) {
@@ -102,6 +110,7 @@ export function createStage(host) {
     (layers || []).forEach((layer, i) => {
       const id = ids[i];
       if (!cards.has(id)) cards.set(id, makeCard(layer, i));
+      if (fillViewport) return;
       const rec = cards.get(id);
       if (Number.isFinite(layer.props?.canvasWidth)) rec.card.style.width = layer.props.canvasWidth + 'px';
       const hd = rec.card.querySelector('header');
@@ -118,6 +127,11 @@ export function createStage(host) {
    * 并且变化 < 24px 时沿用它——滚动条、舍入这类抖动不该重排布局。
    */
   function measure(rec) {
+    if (fillViewport) {
+      rec.lastW = Math.max(1, host.clientWidth);
+      rec.height = Math.max(1, host.clientHeight);
+      return { w: rec.lastW, h: rec.height };
+    }
     /* 宽度用**卡片的布局宽度**（clientWidth/offsetWidth），不要用 getBoundingClientRect()：
        rect 会被祖先的 CSS transform（宿主视口的 fitView 缩放）一起缩放，
        于是一边排版一边被缩放 → 越走越偏。rect 只在拿不到布局宽度时兜底。 */
@@ -131,7 +145,7 @@ export function createStage(host) {
     for (const rec of cards.values()) {
       const { w, h } = measure(rec);
       rec.svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-      rec.svg.style.height = h + 'px';
+      if (!fillViewport) rec.svg.style.height = h + 'px';
     }
   }
 
@@ -280,26 +294,11 @@ export function createStage(host) {
       try {
         const acc = { prims: 0, created: 0, updated: 0, removed: 0, animCount: { enter: 0, exit: 0, move: 0, flash: 0, dim: 0 } };
         const add = (r) => { acc.prims = r.prims; acc.created += r.created; acc.updated += r.updated; acc.removed += r.removed; for (const k of Object.keys(acc.animCount)) acc.animCount[k] += r.animCount[k] || 0; };
-        const P = profileOf(to.style).policy;
         const w = measure(rec).w;
-
-        /* 高度自适应：**只用"探针布局"决定终高，然后只画一次**。
-           ① 不能"按当前高度量 → 想变高 → 再量"：栈/堆格高是 (rect.h-90)/cap，会每按一次 +14px（棘轮）
-           ② 也不能"画完发现装不下再重画"：重画会把这一帧的 enter/flash 全冲成 move（动画错乱）
-           所以：探针 300 → 得 want → 再探针 want 验证装得下 → 定稿 → 一次绘制。 */
-        let want = to.props?.canvasHeight;
-        if (Number.isFinite(want)) {
-          want = Math.max(CARD_MIN_HEIGHT, Math.ceil(want));
-        } else {
-          const probeBottom = contentBottom(probePrims(to, { x: 0, y: 0, w, h: CARD_CANVAS_HEIGHT }), P);
-          want = Math.min(CARD_CANVAS_HEIGHT, Math.max(CARD_MIN_HEIGHT, Math.ceil(probeBottom + 14)));
-          if (Math.abs(want - CARD_CANVAS_HEIGHT) <= 12) want = CARD_CANVAS_HEIGHT;
-          if (want !== CARD_CANVAS_HEIGHT) {
-            const fitBottom = contentBottom(probePrims(to, { x: 0, y: 0, w, h: want }), P);
-            if (fitBottom + 2 > want) want = CARD_CANVAS_HEIGHT;
-          }
+        if (!fillViewport) {
+          const want = cardHeight(to, w);
+          if (Math.abs(want - rec.height) >= 20) { rec.height = want; resize(); }
         }
-        if (Math.abs(want - rec.height) >= 20) { rec.height = want; resize(); }
         const rect = { x: 0, y: 0, w, h: rec.height };
         const r = paintLayer(rec, to, rect, opt); add(r);
         if (r.primsList) for (const p of r.primsList) allPrims.push(p);
@@ -321,6 +320,18 @@ export function createStage(host) {
     }
     lastMetrics = { cards: cards.size, prims, styles, created, updated, removed, anim, primsList: allPrims };
     return lastMetrics;
+  }
+
+  /** 根据探针布局决定卡片高度，定稿后只画一次。 */
+  function cardHeight(layer, w) {
+    const explicit = layer.props?.canvasHeight;
+    if (Number.isFinite(explicit)) return Math.max(CARD_MIN_HEIGHT, Math.ceil(explicit));
+    const policy = profileOf(layer.style).policy;
+    const bottom = contentBottom(probePrims(layer, { x: 0, y: 0, w, h: CARD_CANVAS_HEIGHT }), policy);
+    const height = Math.min(CARD_CANVAS_HEIGHT, Math.max(CARD_MIN_HEIGHT, Math.ceil(bottom + 14)));
+    if (Math.abs(height - CARD_CANVAS_HEIGHT) <= 12) return CARD_CANVAS_HEIGHT;
+    const fitBottom = contentBottom(probePrims(layer, { x: 0, y: 0, w, h: height }), policy);
+    return fitBottom + 2 > height ? CARD_CANVAS_HEIGHT : height;
   }
 
   /** 只取图元（用于量内容高度），不落 DOM */

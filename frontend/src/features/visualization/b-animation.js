@@ -5,6 +5,11 @@ import { describeGraphStep } from './graph-explanation.js';
 import { createUnionFindTable } from './union-find-table.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const FULL_GRAPH_ALGORITHMS = new Set(['bfs', 'dfs', 'prim', 'kruskal', 'dijkstra']);
+
+export function usesFullGraphCanvas(algorithm) {
+  return FULL_GRAPH_ALGORITHMS.has(algorithm);
+}
 
 function vertexLayout(nodes) {
   const columns = Math.ceil(Math.sqrt(nodes.length * 1.5));
@@ -17,6 +22,49 @@ function vertexLayout(nodes) {
     if (nodes.length <= 12) return node;
     return { ...node, x: index % columns / (columns - 1), y: Math.floor(index / columns) / (rows - 1) };
   });
+}
+
+function viewportGraphLayout(vertices, { width, height }) {
+  const count = vertices.length;
+  const spanX = Math.max(1, width - 80);
+  const spanY = Math.max(1, height - 80);
+  // Keep the same rows as the explanation above the graph grows or collapses.
+  const columns = Math.min(count, Math.max(2, Math.round(Math.sqrt(count * spanX / 340))));
+  const rows = Math.ceil(count / columns);
+  const nodes = vertices.map((node, index) => {
+    if (count === 1) return { ...node, x: 0.5, y: 0.5 };
+    if (count === 2) {
+      const offset = index === 0 ? 0.14 : 0.86;
+      return { ...node, x: width >= 320 ? offset : 0.5, y: width >= 320 ? 0.5 : offset };
+    }
+    if (count <= 8) {
+      const phase = count === 4 ? -Math.PI / 4 : -Math.PI / 2;
+      const angle = phase + 2 * Math.PI * index / count;
+      return { ...node, x: 0.5 + 0.46 * Math.cos(angle), y: 0.5 + 0.40 * Math.sin(angle) };
+    }
+    const row = Math.floor(index / columns);
+    const rowSize = Math.min(columns, count - row * columns);
+    return {
+      ...node, x: (index % columns + 0.5 + (columns - rowSize) / 2) / columns,
+      y: (row + 0.5) / rows,
+    };
+  });
+  let spacing = Math.min(width, height) * 0.42;
+  for (const [index, node] of nodes.entries()) {
+    for (const other of nodes.slice(index + 1)) {
+      spacing = Math.min(spacing, Math.hypot((node.x - other.x) * spanX, (node.y - other.y) * spanY));
+    }
+  }
+  const nodeRadius = Math.max(12, Math.min(36, Math.round(spacing * 0.32)));
+  return {
+    nodes,
+    style: {
+      nodeRadius,
+      nodeLabelSize: Math.max(11, Math.min(17, Math.round(nodeRadius * 0.47))),
+      nodeDetailSize: nodeRadius >= 22 ? 12 : 10,
+      edgeLabelSize: nodeRadius >= 22 ? 12 : 10,
+    },
+  };
 }
 
 function makeEdgeKey(directed) {
@@ -43,7 +91,7 @@ function prepareGraph(run) {
   return { vertices: vertexLayout(nodes), links, keyOf, discoveryAt };
 }
 
-function graphFrame(run, graph, step) {
+function graphFrame(run, graph, step, viewportSize) {
   const v = step.variables;
   const { keyOf, discoveryAt } = graph;
   const done = new Set(v.visited ?? v.inMST ?? v.resultOrder ?? []);
@@ -76,10 +124,11 @@ function graphFrame(run, graph, step) {
     return { ...edge, state };
   });
   const labels = v.dist ?? v.key ?? v.inDegree;
-  const nodes = graph.vertices.map(node => labels ? { ...node, sub: labels[node.id] } : node);
+  const layout = viewportSize ? viewportGraphLayout(graph.vertices, viewportSize) : { nodes: graph.vertices };
+  const nodes = layout.nodes.map(node => labels ? { ...node, sub: labels[node.id] } : node);
   return graphLayer({
     id: 'b-graph', title: '输入图', nodes, edges, directed: run.graph.directed,
-    props: { routedEdges: true },
+    props: { routedEdges: true, ...layout.style },
     roles: {
       done: [...done],
       focus1: [v.currentNode, v.currentK].filter(id => id != null),
@@ -161,15 +210,17 @@ function installVertexTitles(host, vertices) {
 export function createBAnimation(host, run, explainHost) {
   const graph = run.graph ? prepareGraph(run) : null;
   const vertices = graph?.vertices ?? vertexLayout(run.input.elements);
+  const fillViewport = Boolean(graph && usesFullGraphCanvas(run.algorithm));
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-graph';
   element.className = 'b-animation';
-  element.classList.toggle('b-animation-wide', vertices.length > 12);
+  element.classList.toggle('b-animation-full', fillViewport);
+  element.classList.toggle('b-animation-wide', !fillViewport && vertices.length > 12);
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz b-animation-stage';
   element.append(canvas);
   host.append(element);
-  const stage = createStage(canvas);
+  const stage = createStage(canvas, { fillViewport });
   const stateTable = !graph ? createUnionFindTable(run.input)
     : run.algorithm === 'floyd' ? createDistanceTable(run.graph.nodes) : null;
   if (stateTable) {
@@ -186,15 +237,25 @@ export function createBAnimation(host, run, explainHost) {
   explainHost.replaceChildren(explain);
 
   let current = null;
-  function showStep(step) {
-    current = step;
+  function draw(step, animate = true) {
+    const viewportSize = fillViewport ? { width: canvas.clientWidth, height: canvas.clientHeight } : null;
     const previous = run.steps[step.stepIndex - 1];
-    const frame = graph ? graphFrame(run, graph, step) : forestFrame(vertices, step, previous);
-    stage.render([frame]);
+    const frame = graph ? graphFrame(run, graph, step, viewportSize) : forestFrame(vertices, step, previous);
+    stage.render([frame], { animate });
     installVertexTitles(canvas, vertices);
     const svg = canvas.querySelector('.avc-svg');
     svg?.setAttribute('role', 'img');
     svg?.setAttribute('aria-label', frame.title);
+  }
+  const observer = fillViewport ? new ResizeObserver(() => {
+    if (current) draw(current, false);
+  }) : null;
+  observer?.observe(canvas);
+
+  function showStep(step) {
+    current = step;
+    draw(step);
+    const previous = run.steps[step.stepIndex - 1];
     stateTable?.showStep(step, previous);
     const explanation = graph ? describeGraphStep(run, step) : {
       action: step.description,
@@ -213,6 +274,7 @@ export function createBAnimation(host, run, explainHost) {
       showStep(current);
     },
     destroy() {
+      observer?.disconnect();
       stage.clear();
       element.remove();
       explain.remove();

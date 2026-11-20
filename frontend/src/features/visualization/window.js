@@ -15,7 +15,7 @@ import { createCAnimation } from './c-animation.js';
 import { createVisualization } from './index.js';
 import { arraySearch } from '../workbench/array-search.js';
 import { graphAlgorithm } from '../workbench/graph-algorithms.js';
-import { createBAnimation } from './b-animation.js';
+import { createBAnimation, usesFullGraphCanvas } from './b-animation.js';
 import { isASort } from './a-sort-state.js';
 import { createASortVisualization } from './a-sort-view.js';
 import { buildPrototypeArrayFrame } from './prototype-array.js';
@@ -115,10 +115,11 @@ export function createVizWindow(host, {
   }
   const custom = algorithm === 'custom-array';
   const graph = graphAlgorithm(algorithm);
+  const fullGraphCanvas = usesFullGraphCanvas(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
   root.innerHTML = TEMPLATE;
-  if (graph || unionFind) root.dataset.graphView = unionFind || algorithm === 'floyd' ? 'table' : 'graph';
+  if (graph || unionFind) root.dataset.graphView = fullGraphCanvas ? 'canvas' : unionFind || algorithm === 'floyd' ? 'table' : 'graph';
   if (traceView) {
     root.dataset.traceAnimation = 'true';
     root.dataset.tableView = 'true';
@@ -227,7 +228,7 @@ export function createVizWindow(host, {
        不能被视口的自动取景缩放：否则上一轮的 scale 会被继承/反复相乘，
        卡越走越小、最后看不见。这里对结构族 plus 运行只把视图复位成 1:1。
        数组族 plus 仍然走本项目的数组链路，照旧自动取景。 */
-    if (currentRun && currentRun.plus && currentRun.structure !== 'array') {
+    if (fullGraphCanvas || (currentRun?.plus && currentRun.structure !== 'array')) {
       view.scale = 1; view.x = 0; view.y = 0;
       applyView();
       warnIfCanvasTiny();
@@ -498,7 +499,7 @@ export function createVizWindow(host, {
   }
   setStep(run?.steps[0] ?? null, {stepIndex:run ? 0 : -1,total:run?.steps.length ?? 0,canPrev:false,canNext:Boolean(run && run.steps.length > 1),playing:false});
 
-  const observer = new ResizeObserver(queueFit); observer.observe(body);
+  const observer = new ResizeObserver(fullGraphCanvas ? warnIfCanvasTiny : queueFit); observer.observe(body);
   const rulerObserver = new ResizeObserver(updateLabelDensity); rulerObserver.observe(ruler);
   const bar = $('.win-bar'); let drag = null;
   bar.addEventListener('pointerdown', event => {

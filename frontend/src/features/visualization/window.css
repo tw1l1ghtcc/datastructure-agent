@@ -80,7 +80,7 @@
 .trace-animation-state .uf-table caption { text-align: left; padding: 5px 0; font-weight: 600; }
 .trace-animation-state .uf-table :is(th, td) { border-color: var(--bl-line); padding: 4px 6px; overflow-wrap: anywhere; }
 .trace-animation-state .uf-table th { position: sticky; top: 0; background: var(--bl-head); }
-.trace-animation-viewport [data-avc-key^="n-"] circle { pointer-events: auto; }
+.trace-animation-stage [data-avc-key^="n-"] circle:has(> title) { pointer-events: auto; }
 .vizwin[data-trace-split] .viewport-legend { margin: 4px 14px 10px; }
 .vizwin .legend-related { background: #fdeff8; color: #8b1570; }
 .trace-animation-stage .canvas-card header span { display: none; }

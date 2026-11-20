@@ -21,10 +21,15 @@ const examples = [
   ['binary-tree-reconstruction', { root: 'A', nodes: [{ id: 'A', left: 'B', right: 'C' }, { id: 'B', left: null, right: 'D' }, { id: 'D', left: null, right: null }, { id: 'C', left: null, right: null }] }, /重建区间/],
   ['threaded-binary-tree', ['B', 'D', 'A', 'C'], /前驱线索/],
   ['tree-forest-conversion', { root: 'A', nodes: [{ id: 'A', left: 'B', right: 'D' }, { id: 'B', left: null, right: 'C' }, { id: 'C', left: null, right: null }, { id: 'D', left: null, right: null }] }, /左孩子右兄弟表示/],
-  ['tree-forest-traversal', ['A', 'B', 'C', 'D'], /有序森林/],
+  ['tree-forest-traversal', ['A', 'B', 'C', 'D'], /访问顺序/],
   ['huffman-coding', ['00', '01', '1'], /码字表/],
   ['binary-search-tree', [3, 4, 5, 7], /中序结果/],
 ];
+const retainedCaptions = {
+  'binary-tree-reconstruction': ['重建区间（栈底在上）'],
+  'tree-forest-traversal': ['递归栈（栈底在上）', '访问顺序'],
+  'binary-search-tree': ['本次操作', '中序结果'],
+};
 
 async function startRun(page, id, expectedStatus = 200) {
   const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/algorithms/' + id + '/runs'));
@@ -150,6 +155,9 @@ try {
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
     assert.match(await page.locator('.level-order-tables').innerText(), caption, id);
+    if (retainedCaptions[id]) {
+      assert.deepEqual(await page.locator('.g-state-tables caption').allTextContents(), retainedCaptions[id]);
+    }
     await page.click('#prevBtn');
     const currentIndex = run.steps.length - 2;
     await assertStep(page, run, currentIndex);
@@ -163,6 +171,18 @@ try {
     assert.deepEqual(stepRefs[0].variables, run.steps[currentIndex].variables);
     await page.click('#resetBtn');
     await assertStep(page, run, 0);
+  }
+
+  await selectWorkbenchAlgorithm(page, 'binary-tree-reconstruction');
+  if (await page.locator('#g-edit').isVisible()) await page.click('#g-edit');
+  const longNames = ['ReconstructionNodeLeft', 'ReconstructionNodeRight'];
+  await page.fill('#g-primary', longNames.join(', '));
+  await page.fill('#g-secondary', [...longNames].reverse().join(', '));
+  await startRun(page, 'binary-tree-reconstruction');
+  await page.locator('[data-t="last"]').click();
+  const rebuilt = layer(page, 'g-tree');
+  for (const name of longNames) {
+    assert.equal(await rebuilt.locator('[data-avc-key="n-' + primitiveKey(name) + '"] circle title').textContent(), name);
   }
 
   await selectWorkbenchAlgorithm(page, 'binary-tree-preorder');

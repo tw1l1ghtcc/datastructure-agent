@@ -9,7 +9,9 @@ function nodeId(value) {
   return 'n' + Array.from(String(value), char => char.codePointAt(0).toString(16)).join('_');
 }
 
-function tree(id, title, records, { roots = [], current, visited = [], selected = [], threaded = false, huffman = false, fitViewport = false } = {}) {
+function tree(id, title, records, {
+  roots = [], current, visited = [], selected = [], threaded = false, huffman = false, fitViewport = false, preserveLabels = false,
+} = {}) {
   const existing = new Set(records.map(node => huffman ? node.index : node.id));
   const ref = key => existing.has(key) ? nodeId(key) : null;
   const edgeTags = {};
@@ -30,7 +32,7 @@ function tree(id, title, records, { roots = [], current, visited = [], selected 
       id, label, left, right, children: node.children ? node.children.map(ref).filter(Boolean) : undefined,
       radius: Math.max(enlarged ? 25 : 17, Math.ceil(label.length * 4.5 / 2 + 8)),
       fontSize: label.length > 8 ? 9 : enlarged ? 14 : 11,
-      fullLabel: fitViewport && label !== fullLabel ? fullLabel : undefined,
+      fullLabel: (fitViewport || preserveLabels) && label !== fullLabel ? fullLabel : undefined,
       value: huffman && node.id != null ? compactLabel(node.id, 10) : undefined,
     };
   });
@@ -74,8 +76,9 @@ function treeFrame(step, fitViewport) {
   const forest = step.algorithm === 'tree-forest-traversal';
   const threaded = step.algorithm === 'threaded-binary-tree';
   const title = forest ? '有序森林' : threaded ? '二叉树 · 虚线为前驱／后继线索' : '二叉树';
+  const preserveLabels = forest || step.algorithm === 'binary-tree-reconstruction' || step.algorithm === 'binary-search-tree';
   const layers = [tree('g-tree', title, v.nodes, {
-    roots: forest ? v.roots : [v.root], current, visited: order, selected: [v.edge?.to ?? v.childNode], threaded, fitViewport,
+    roots: forest ? v.roots : [v.root], current, visited: order, selected: [v.edge?.to ?? v.childNode], threaded, fitViewport, preserveLabels,
   })];
   if (fitViewport) return layers;
   if (v.queue) layers.push(sequenceLayer('g-queue', '队列（队首在左）', v.queue.map(entry => entry.id)));

@@ -6,7 +6,7 @@ function markCurrent(element, index) {
   return element;
 }
 
-function binaryTable(nodes, title, current, labels = ['左孩子', '右孩子']) {
+function binaryTable(nodes, title, current, labels) {
   return markCurrent(table(title, ['节点', ...labels], nodes.map(({ id, left, right }) => [id, left, right])),
     nodes.findIndex(node => node.id === current));
 }
@@ -26,10 +26,9 @@ function orderTable(order, title = '访问顺序') {
   return table(title, ['顺序', '节点'], order.map((id, index) => [index + 1, id]));
 }
 
-function reconstruction({ nodes, root, currentNode, stack }) {
+function reconstruction({ stack }) {
   const range = (start, end) => '[' + start + ', ' + end + ')';
   return [
-    binaryTable(nodes, '已创建的节点 · 根节点 ' + (root ?? '空'), currentNode),
     table('重建区间（栈底在上）', ['子树根', '前序区间', '中序区间', '中序根下标', '左右中序子区间'],
       stack.map(frame => [frame.id, range(frame.preStart, frame.preEnd), range(frame.inStart, frame.inEnd),
         frame.split, frame.leftRange && range(...frame.leftRange.inorder) + ' / ' + range(...frame.rightRange.inorder)])),
@@ -55,12 +54,8 @@ function huffman({ nodes, candidates, selected, codes, root, currentNode }) {
 }
 
 function bst(config, variables) {
-  const { nodes, root, currentNode, lastResult, inorder } = variables;
-  const key = id => id === null ? null : nodes[id].key;
-  const relationships = table('节点关系 · 根节点键 ' + (key(root) ?? '空'), ['键', '左孩子键', '右孩子键'],
-    nodes.map(node => [node.key, key(node.left), key(node.right)]));
+  const { lastResult, inorder } = variables;
   return [
-    markCurrent(relationships, nodes.findIndex(node => node.id === currentNode)),
     table('本次操作', ['当前操作', '比较路径（键）', '最近完成的操作'],
       [[gVariableText(config, 'operation', variables), gVariableText(config, 'path', variables), operationResultText(lastResult)]]),
     ...(inorder ? [table('中序结果', ['键序列'], [[showList(inorder)]])] : []),
@@ -89,7 +84,7 @@ export function createGStateTable(algorithm, config) {
           if (v.mode === 'to-forest') tables.reverse();
           break;
         case 'tree-forest-traversal':
-          tables = [forestTable(v.nodes, v.roots, v.currentNode), stackTable(v.stack, false), orderTable(v.order)];
+          tables = [stackTable(v.stack, false), orderTable(v.order)];
           break;
         case 'huffman-coding':
           tables = huffman(v);

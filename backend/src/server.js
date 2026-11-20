@@ -1,5 +1,6 @@
 import { eAlgorithm } from '../../frontend/src/features/workbench/e-algorithms.js';
 import { gAlgorithm } from '../../frontend/src/features/workbench/g-algorithms.js';
+import { fAlgorithm } from '../../frontend/src/features/workbench/f-algorithms.js';
 import { dAlgorithm } from '../../frontend/src/features/workbench/d-algorithms.js';
 import { cAlgorithm } from '../../frontend/src/features/workbench/c-algorithms.js';
 import { arraySearch } from '../../frontend/src/features/workbench/array-search.js';
@@ -9,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { handleCreateRun, handleCreateSortRun, handleCreateBubbleRun, handleCreateUnionFindRun, handleCreateGRun, handleCreateERun, handleCreateDRun, handleCreateCRun, handleCreateArraySearchRun, handleCreateGraphRun, handleGetRun, handleGetStep } from './routes/runs.js';
+import { handleCreateRun, handleCreateSortRun, handleCreateBubbleRun, handleCreateUnionFindRun, handleCreateGRun, handleCreateERun, handleCreateFRun, handleCreateDRun, handleCreateCRun, handleCreateArraySearchRun, handleCreateGraphRun, handleGetRun, handleGetStep } from './routes/runs.js';
 import { handleGetExercises, handleCheckExercise } from './routes/exercises.js';
 import { getUsage } from './agent/rate-limit.js';
 import { knowledgeResponse } from './knowledge/retrieve.js';
@@ -70,6 +71,7 @@ const server = createServer(async (request, response) => {
       if(dAlgorithm(algorithm))return handleCreateDRun(response,await readBody(request),algorithm);
       if (eAlgorithm(algorithm)) return handleCreateERun(response, await readBody(request), algorithm);
       if (gAlgorithm(algorithm)) return handleCreateGRun(response, await readBody(request), algorithm);
+      if (fAlgorithm(algorithm)) return handleCreateFRun(response, await readBody(request), algorithm);
       if (cAlgorithm(algorithm)) return handleCreateCRun(response, await readBody(request), algorithm);
       if (algorithm === 'union-find') return handleCreateUnionFindRun(response, await readBody(request));
       if (graphAlgorithm(algorithm)) return handleCreateGraphRun(response, await readBody(request), algorithm);

@@ -1,5 +1,6 @@
 import { eAlgorithm } from '../workbench/e-algorithms.js';
 import { gAlgorithm } from '../workbench/g-algorithms.js';
+import { fAlgorithm } from '../workbench/f-algorithms.js';
 
 const markup = `
 <header class="chat-header"><h2>步骤辅导</h2><span id="status-badge" class="badge mock">正在连接…</span><a href="/" class="back-link">返回工作台</a></header>
@@ -48,6 +49,7 @@ export function createAgentChat(container, { embedded = false, onBeforeSend = ()
     question.placeholder = embedded && !context ? '可以先写问题，开始分析后再发送。'
       : context?.algorithm === 'binary-tree-level-order' ? '为什么这个节点先出队？'
       : data ? data.prompt
+      : fAlgorithm(context?.algorithm) ? '这一步怎样更新执行状态？'
       : context?.algorithm === 'union-find' ? '为什么这一步要修改父节点？'
       : context?.algorithm === 'linear-search' ? '目前比较到哪个元素了？'
       : context?.algorithm === 'block-search' ? '为什么选中这一块？'

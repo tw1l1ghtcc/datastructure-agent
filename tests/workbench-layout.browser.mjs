@@ -15,7 +15,7 @@ try {
  await page.goto(base);await page.waitForFunction(()=>document.querySelector('#exercise-load-status').textContent.includes('10'));
  const menu = page.locator('#algorithm-chapters');
  assert.equal(await menu.locator('[data-algorithm-choice^="plus:"]').count(), 0);
- assert.equal(await menu.locator('[data-algorithm-choice]').count(), 50);
+ assert.equal(await menu.locator('[data-algorithm-choice]').count(), 57);
  assert.equal(await page.locator('#tutor-window').isVisible(),false);
  await page.click('#fillDemo');await page.click('#startBtn');await page.waitForFunction(()=>window.__steps.at(-1)?.stepIndex===0);
  await page.click('#nextBtn');await page.waitForTimeout(350);

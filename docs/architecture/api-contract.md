@@ -85,6 +85,19 @@ E 包复用运行、单步查询及步骤问答。合法输入返回 `{runId,cre
 
 森林节点为 `{id,children}`，根和孩子均按输入顺序排列，最多 64 个节点。二叉排序树的创建和整次查询返回 `format:"bst-replay-v1"`，`treeStates` 保存每次插入后的节点快照，传输步骤通过下标引用快照和操作路径。工作台用 `restoreBinarySearchTreeRun` 还原为标准步骤。单步查询和「问一步」直接使用服务端按同一轨迹还原的步骤。
 
+F 包复用 `POST /api/algorithms/<算法标识>/runs`、运行查询、步骤查询和「问一步」。以下请求以 `input` 保存。结构、模式或数量上限非法时返回 `400 INVALID_INPUT`。可定位的括号错误、表达式错误和有向环随运行的末帧返回。
+
+| 算法标识 | 请求体 | 结果 |
+| --- | --- | --- |
+| `bracket-matching` | `{text}`，最多 120 个字符 | `{matched,index,reason}`，完全匹配时 index 为 -1 |
+| `infix-to-postfix` | `{expression}` | 后缀词元数组 |
+| `expression-evaluation` | `{expression,mode}`，模式为 `infix`（默认）或 `postfix` | `{value}` |
+| `naive-string-match`、`kmp` | `{text,pattern}`，KMP 可加 `mode`，支持 `next`（默认）和 `nextval` | 全部匹配起点的数组，空模式返回 `[0]` |
+| `expression-dag` | `{expression}` | `{value,root,nodes,edges,order}`，依赖边包含左或右操作数角色 |
+| `critical-path` | `{nodes,edges,directed:true}`，活动为 `[起点,终点,工期]` | 总工期、时间表、活动时差、关键边和前八条关键路径 |
+
+主串和模式串分别最多 120 和 48 个 Unicode 字符，下标从 0 开始。表达式最多 256 字符、64 个词元。表达式错误返回 `{error,index}`。关键路径最多 30 个顶点和 120 项活动，按千分之一的单位计算，接受 0 至 10 亿且最多三位小数的工期，保留平行活动。若有更多关键路径，`morePaths` 为 true。边界样例见 [F 包验收](../team/final/f-validation.md)。
+
 并查集接受 `{elements, operations}`，1 至 30 个唯一非空字符串元素，最多 60 个操作。操作格式为 `["union", x, y]` 或 `["find", x]`，引用未知元素时返回 400。空操作序列可运行。运行保存输入快照 `input`，步骤使用现有引擎的 `parent`、`rank`、`setCount`、`currentOp` 和 `findPath`。工作台使用父节点表，单步、回看、源码高亮和问答共用当前步骤；树形动画待接入。
 
 图算法标识为 `bfs`、`dfs`、`prim`、`kruskal`、`dijkstra`、`floyd` 和 `topological-sort`。请求接受 `{nodes, edges, directed, start}`。顶点名须唯一，最多 30 个（Floyd 最多 8 个），边最多 120 条。BFS、DFS、拓扑排序使用 `[from, to]`；其他图算法使用 `[from, to, weight]`，权重为有限数值，绝对值不超过 10¹²。Dijkstra 拒绝负权。BFS、DFS、Prim、Dijkstra 需要起点；Prim、Kruskal 固定无向，拓扑排序固定有向。可选方向默认无向。边端点和起点须在顶点列表内。

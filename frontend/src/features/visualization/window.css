@@ -42,8 +42,8 @@
 .vizwin[data-trace-animation] .viewport-scene { width: max-content; min-width: 100%; padding: 6px 12px 14px; }
 .trace-animation-stage.plus-viz { width: max-content; height: auto; min-height: 0; overflow: visible; margin-bottom: 14px; }
 .trace-animation-stage .canvas-card header span { display: none; }
-.vizwin[data-trace-animation] :is(.e-state-tables, .level-order-tables) { max-width: 580px; }
-.vizwin[data-trace-animation] :is(.e-state-tables, .level-order-tables) :is(th, td) { overflow-wrap: anywhere; }
+.vizwin[data-trace-animation] :is(.c-state-tables, .e-state-tables, .level-order-tables) { max-width: 580px; }
+.vizwin[data-trace-animation] :is(.c-state-tables, .e-state-tables, .level-order-tables) :is(th, td) { overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   #visualization-panel:has(.vizwin[data-trace-animation]) { height: 600px; }
 }

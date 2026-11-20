@@ -8,6 +8,8 @@ import { gAlgorithm } from '../workbench/g-algorithms.js';
 import { createGAnimation } from './g-animation.js';
 import { eAlgorithm } from '../workbench/e-algorithms.js';
 import { createEAnimation } from './e-animation.js';
+import { fAlgorithm } from '../workbench/f-algorithms.js';
+import { createFAnimation } from './f-animation.js';
 import { cAlgorithm } from '../workbench/c-algorithms.js';
 import { createCAnimation } from './c-animation.js';
 import { createVisualization } from './index.js';
@@ -89,10 +91,11 @@ export function createVizWindow(host, {
   root.className = 'win vizwin';
   root.dataset.win = 'viz';
   const c = cAlgorithm(algorithm);
+  const f = fAlgorithm(algorithm);
   const g = gAlgorithm(algorithm);
   const e = eAlgorithm(algorithm);
   const d = dAlgorithm(algorithm);
-  const traceView = e ?? g ?? c ?? d;
+  const traceView = e ?? f ?? g ?? c ?? d;
   const unionFind = algorithm === 'union-find';
   /* 合并（PR #66 §1）：主分支把"排序"扩成 8 种，我们的 plus 示例也要用同一套窗口 */
   const sorting = SORT_ALGORITHMS.includes(algorithm);
@@ -431,6 +434,8 @@ export function createVizWindow(host, {
     scene.replaceChildren();
     if (e) {
       viz = createEAnimation(vizHost, explainHost, nextRun, e);
+    } else if (f) {
+      viz = createFAnimation(vizHost, explainHost, nextRun, f);
     } else if (g) {
       viz = createGAnimation(vizHost, explainHost, nextRun, g);
     } else if (c) {

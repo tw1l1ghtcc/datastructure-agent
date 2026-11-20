@@ -44,7 +44,8 @@ function routeEdge(edge, a, b, radius, rect) {
   if (!edge.bend) return null;
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const length = Math.hypot(dx, dy) || 1;
-  const middle = [(a[0] + b[0]) / 2 - dy * 17 / length, (a[1] + b[1]) / 2 + dx * 17 / length];
+  const bend = Number.isFinite(edge.bend) ? edge.bend : 17;
+  const middle = [(a[0] + b[0]) / 2 - dy * bend / length, (a[1] + b[1]) / 2 + dx * bend / length];
   return { points: [toward(a, middle, radius), middle, toward(b, middle, radius)], label: middle };
 }
 
@@ -132,7 +133,7 @@ export function layout(layer, rect, env = {}) {
     nodes.set(`ptr:${pt.id}`, { x: p[0] + nodeR + 18, y: p[1] - nodeR - 6 });
   });
 
-  if (props.weighted !== false && edges.some((e) => e.w != null)) {
+  if (props.showLegend !== false && props.weighted !== false && edges.some((e) => e.w != null)) {
     const legend = ['候选=虚线', '已选=实粗线', '当前=红', '拒绝=灰细线'];
     prims.push(P.text('legend', rect.x + rect.w - 12, rect.y + 16, legend.join(' · '), { align: 'right', size: 10, fill: UI.textMuted }));
   }

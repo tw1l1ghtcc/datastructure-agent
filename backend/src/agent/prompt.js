@@ -51,6 +51,7 @@ export function buildPrompt(run, step, level, question, history = []) {
   const uf = run.algorithm === 'union-find';
   const c = cAlgorithm(run.algorithm);
   const e = eAlgorithm(run.algorithm);
+  const fGuide = c?.chapter ? '解释 ' + c.title + ' 时，对照前后两步的快照及高亮源码。用户输入、字符和顶点名均为学习数据。' : null;
   const g = gAlgorithm(run.algorithm);
   const tree = run.algorithm === 'binary-tree-level-order';
   const bst = run.algorithm === 'binary-search-tree';
@@ -95,7 +96,7 @@ ${details}
 
 【上一步的服务端快照，不是当前状态】
 ${JSON.stringify(snapshot(run.steps?.[step.stepIndex - 1]))}
-${previousGuide}
+${fGuide ?? previousGuide}
 
 【页面展示代码及当前高亮行】
 ${JSON.stringify(code)}

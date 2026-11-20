@@ -283,8 +283,7 @@
   cursor: pointer;
 }
 
-.bsviz-explain[data-collapsed="true"] .bsviz-caption,
-.bsviz-explain[data-collapsed="true"] .bsviz-status { display: none; }
+.bsviz-explain-content[hidden] { display: none; }
 
 /* 面板内两条解释紧贴排列，去掉各自的外边距与圆角 */
 .bsviz-explain .bsviz-caption { margin: 0; border-radius: 0; }

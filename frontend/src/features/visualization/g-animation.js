@@ -86,5 +86,5 @@ function treeFrame(step) {
 
 export function createGAnimation(host, explainHost, run, config) {
   const table = run.algorithm === 'binary-tree-level-order' ? createLevelOrderTable() : createGStateTable(run.algorithm, config);
-  return createTraceAnimation(host, explainHost, table, treeFrame, 'g');
+  return createTraceAnimation(host, explainHost, table, treeFrame, 'g', { run, config });
 }

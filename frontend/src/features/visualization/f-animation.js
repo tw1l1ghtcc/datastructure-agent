@@ -187,5 +187,5 @@ export function createFAnimation(host, explainHost, run, config) {
     'expression-dag': step => expressionDagFrame(step.variables),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
   };
-  return createTraceAnimation(host, explainHost, createFStateTable(config, run.algorithm, input), frames[run.algorithm], 'f');
+  return createTraceAnimation(host, explainHost, createFStateTable(config, run.algorithm, input), frames[run.algorithm], 'f', { run, config });
 }

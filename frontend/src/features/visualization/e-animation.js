@@ -117,5 +117,5 @@ export function createEAnimation(host, explainHost, run, config) {
     radix: step => radixFrame(step, previous(step)),
     counting: step => countingFrame(run, step, init),
   };
-  return createTraceAnimation(host, explainHost, createEStateTable(run, config), frames[config.view], 'e');
+  return createTraceAnimation(host, explainHost, createEStateTable(run, config), frames[config.view], 'e', { run, config });
 }

@@ -237,8 +237,7 @@ export function createVizWindow(host, {
     const ch = body.clientHeight || 1;
     const sw = scene.offsetWidth || 1;
     const sh = scene.offsetHeight || 1;
-    const availableHeight = scene.querySelector('.a-sort-auxiliary') ? Math.max(1, ch - 52) : ch;
-    const fit = Math.min(cw / sw, availableHeight / sh) * 0.92;
+    const fit = Math.min(cw / sw, ch / sh) * 0.92;
     view.scale = Math.min(view.maxFit, Math.max(view.min, fit));
     view.x = 0;
     view.y = 0;
@@ -461,7 +460,11 @@ export function createVizWindow(host, {
 
   function setStep(step, nextState = {}) {
     state = { ...state, ...nextState };
-    if (viz && step && (useLegacy || viz.getStep() !== step)) viz.showStep(step);
+    if (viz && step && (useLegacy || viz.getStep() !== step)) {
+      viz.showStep(step);
+      const explanation = explainHost.querySelector('.bsviz-explain-content');
+      if (explanation) explanation.scrollTop = 0;
+    }
     const active = Boolean(currentRun && state.total > 0);
     const play = $('#playBtn');
     const label = state.playing ? '暂停' : '播放';

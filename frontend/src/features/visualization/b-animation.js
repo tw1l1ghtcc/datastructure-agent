@@ -202,7 +202,7 @@ export function createBAnimation(host, run, explainHost) {
         (step.variables.findPath ? ' ｜ 查找路径：' + step.variables.findPath.join(' → ') : ''),
     };
     caption.textContent = explanation.action;
-    status.textContent = explanation.detail;
+    status.textContent = '第 ' + (step.stepIndex + 1) + ' 步' + (explanation.detail ? ' ｜ ' + explanation.detail : '');
   }
   return {
     showStep,

@@ -1,6 +1,7 @@
 import { createStage } from '../../../vendor/plus/app/svg-stage.js';
 import { gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createExplanationPanel } from './explanation-panel.js';
+import { describeStructuredStep } from './structured-explanation.js';
 
 export function windowStart(length, size, focus = 0) {
   return Math.max(0, Math.min(focus - Math.floor(size / 2), length - size));
@@ -30,7 +31,7 @@ export function sequenceLayer(id, title, values, roles = {}, { first, indexBase 
   });
 }
 
-export function createTraceAnimation(host, explainHost, stateTable, frameFor, packageId) {
+export function createTraceAnimation(host, explainHost, stateTable, frameFor, packageId, { run, config }) {
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-' + packageId;
   const canvas = document.createElement('div');
@@ -60,7 +61,7 @@ export function createTraceAnimation(host, explainHost, stateTable, frameFor, pa
       render(step);
       stateTable.showStep(step);
       caption.textContent = step.description;
-      status.textContent = '第 ' + (step.stepIndex + 1) + ' 步' + (step.done ? ' · 运行结束' : '');
+      status.textContent = describeStructuredStep(run, step, config, packageId);
     },
     playEnterAnimation() {
       if (!current) return;

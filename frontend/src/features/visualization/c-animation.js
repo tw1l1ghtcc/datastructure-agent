@@ -2,6 +2,7 @@ import { createStage } from '../../../vendor/plus/app/svg-stage.js';
 import { arrayLayer, treeLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createCStateTable } from './c-state-table.js';
 import { createExplanationPanel } from './explanation-panel.js';
+import { describeStructuredStep } from './structured-explanation.js';
 
 const ARRAY_WINDOW = 16;
 const MIN_WIDTH = 320;
@@ -137,7 +138,7 @@ export function createCAnimation(host, run, config, explainHost) {
     }
     state.showStep(step);
     caption.textContent = step.description;
-    status.textContent = '第 ' + (step.stepIndex + 1) + ' 步' + (step.done ? ' · 运行结束' : '');
+    status.textContent = describeStructuredStep(run, step, config, 'c');
   }
 
   return {

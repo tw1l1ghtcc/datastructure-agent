@@ -2,6 +2,7 @@ import { createStage } from '../../../vendor/plus/app/svg-stage.js';
 import { gridLayer, linkLayer, treeLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createDStateTable } from './d-state-table.js';
 import { createExplanationPanel } from './explanation-panel.js';
+import { describeStructuredStep } from './structured-explanation.js';
 
 const MIN_WIDTH = 320;
 const SLOT_WINDOW = 7;
@@ -133,7 +134,7 @@ export function createDAnimation(host, run, config, explainHost) {
       render(step);
       table.showStep(step);
       caption.textContent = step.description;
-      status.textContent = '第 ' + (step.stepIndex + 1) + ' 步' + (step.done ? ' · 运行结束' : '');
+      status.textContent = describeStructuredStep(run, step, config, 'd');
     },
     playEnterAnimation() {
       if (!current) return;

@@ -180,7 +180,7 @@ export function layout(layer, rect, env = {}) {
       prims.push(P.text(`nv-${n.id}`, g.x + g.w / 2, g.y + g.h * (fitViewport ? 0.38 : 0.5), value,
         { size, fill: st === 'idle' ? LINK.LinkNodeText : s.text, opacity: s.opacity }));
       if (fitViewport && n.label) prims.push(P.text(`nid-${n.id}`, g.x + g.w / 2, g.y + g.h * 0.76, n.label,
-        { size: Math.min(12, nodeH * 0.27), fill: st === 'idle' ? UI.textMuted : s.text }));
+        { size: Math.min(12, nodeH * 0.27, (nodeW - 4) / (n.label.length * 0.63)), fill: st === 'idle' ? UI.textMuted : s.text }));
     }
     if (n.badge) prims.push(P.text(`nb-${n.id}`, g.x + g.w / 2, g.y - 10, n.badge, { size: 10, fill: UI.textMuted }));
   };
@@ -205,7 +205,7 @@ export function layout(layer, rect, env = {}) {
   const tail = list[list.length - 1];
   const tg = geo.get(tail.id);
   const tailNext = (data.links || []).find((l) => l.from === tail.id);
-  if (!tailNext && !tail.next && tg) {
+  if (props.showTailMarker !== false && !tailNext && !tail.next && tg) {
     const tailX = fitViewport && Math.floor((list.length - 1) / perRow) % 2 ? tg.x - 18 : tg.x + tg.w + 18;
     prims.push(P.text('null', tailX, tg.y + tg.h / 2, '∧', { size: 16, fill: LINK.LinkNodeLine }));
   }

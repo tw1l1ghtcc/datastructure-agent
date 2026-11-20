@@ -134,10 +134,12 @@ export function createVizWindow(host, {
     root.querySelector('.viewport-legend').hidden = true;
     if (traceCanvas) {
       const arrayReverse = algorithm === 'array-list-reverse';
+      const listInsert = algorithm === 'singly-linked-list-insert';
       root.dataset.traceCanvas = 'true';
-      root.querySelector('.vh-title').textContent = arrayReverse ? '顺序表' : '链表与快慢指针';
+      root.querySelector('.vh-title').textContent = arrayReverse ? '顺序表' : listInsert ? '链表与新结点' : '链表与快慢指针';
       root.querySelector('[data-viz-body]').setAttribute('aria-label', arrayReverse
-        ? '顺序表动画，i 和 j 标记交换位置' : '链表动画，显示快慢指针和找到的结点');
+        ? '顺序表动画，i 和 j 标记交换位置' : listInsert
+          ? '链表动画，显示新结点和 next 指向' : '链表动画，显示快慢指针和找到的结点');
     } else {
       root.dataset.traceAnimation = 'true';
       root.dataset.tableView = 'true';

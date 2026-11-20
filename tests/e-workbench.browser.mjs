@@ -14,7 +14,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 const examples = [
   ['array-list-reverse', [5, 4, 3, 2, 1]],
   ['array-list-delete-range', [1, 5], '逻辑长度 2'],
-  ['singly-linked-list-insert', [1, 2, 3], '结点与链接'],
+  ['singly-linked-list-insert', [1, 2, 3]],
   ['singly-linked-list-delete', [2, 3], '结点与链接'],
   ['singly-linked-list-reverse', [6, 4, 2], '结点与链接'],
   ['kth-from-end', { nodeId: 2, value: 1 }],
@@ -105,7 +105,7 @@ try {
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
-    if (algorithm === 'array-list-reverse' || algorithm === 'kth-from-end') {
+    if (!title) {
       const id = algorithm === 'array-list-reverse' ? 'e-array' : 'e-list';
       await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
@@ -127,6 +127,18 @@ try {
       assert.equal(await svg.locator('[data-avc-key="nid-n0"]').textContent(), '#0');
       assert.equal(await svg.locator('[data-avc-key="ptr-fast"]').textContent(), '快 fast');
       assert.equal(await svg.locator('[data-avc-key="ptr-slow"]').textContent(), '慢 slow');
+    }
+    if (algorithm === 'singly-linked-list-insert') {
+      const svg = layer(page, 'e-list');
+      assert.equal(await svg.locator('[data-avc-key="ptr-new"]').textContent(), '链外');
+      assert.equal(await svg.locator('[data-avc-key="nid-n1"]').textContent(), '#1 · NULL');
+      assert.equal(await svg.locator('[data-avc-key="nid-n2"]').textContent(), '#2 · NULL');
+      assert.equal(await svg.locator('[data-avc-key="link-n0-n2"]').count(), 0);
+      await page.click('#nextBtn');
+      await assertStep(page, run, 2);
+      assert.equal(await svg.locator('[data-avc-key="ptr-new"]').textContent(), '新结点');
+      assert.equal(await svg.locator('[data-avc-key="link-n0-n2"]').count(), 1);
+      assert.equal(await svg.locator('[data-avc-key="link-n2-n1"]').count(), 1);
     }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
@@ -187,10 +199,36 @@ try {
   await page.fill('#e-value', '0');
   const insert = await start(page, 'singly-linked-list-insert');
   assert.deepEqual(insert.result, [0]);
+  await assertFullCanvas(page, 'e-list');
   await page.click('#nextBtn');
-  assert.deepEqual(await values(tableRows(page, '结点与链接'), 4), ['链外']);
+  const insertSvg = layer(page, 'e-list');
+  assert.equal(await insertSvg.locator('[data-avc-key="ptr-new"]').textContent(), '链外');
+  assert.equal(await insertSvg.locator('[data-avc-key="null-head"]').textContent(), 'head=∧');
   await page.click('#nextBtn');
-  assert.deepEqual(await values(tableRows(page, '当前链表'), 1), ['0']);
+  assert.equal(await insertSvg.locator('[data-avc-key="head"]').textContent(), 'head');
+  assert.equal(await insertSvg.locator('[data-avc-key="nv-n0"]').textContent(), '0');
+
+  await page.setViewportSize({ width: 1120, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const fullList = Array(64).fill(-2147483648);
+  await page.click('#e-edit');
+  await page.fill('#e-data', fullList.join(','));
+  await page.fill('#e-pos', String(fullList.length));
+  await page.fill('#e-value', '0');
+  const tailInsert = await start(page, 'singly-linked-list-insert');
+  await assertFullCanvas(page, 'e-list');
+  await page.click('#nextBtn');
+  assert.equal(await insertSvg.locator('[data-avc-key="nid-n63"]').textContent(), '#63 · NULL');
+  assert.equal(await insertSvg.locator('[data-avc-key="nid-n64"]').textContent(), '#64 · NULL');
+  await page.click('#nextBtn');
+  await assertStep(page, tailInsert, 2);
+  assert.equal(await insertSvg.locator('[data-avc-key="link-n63-n64"]').count(), 1);
+  assert.ok(await insertSvg.evaluate(svg => {
+    const box = svg.querySelector('.avc-layer').getBBox();
+    const { width, height } = svg.viewBox.baseVal;
+    return box.x >= -1 && box.y >= -1 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1;
+  }), '插入后 65 个结点都显示在画布内');
+  assert.deepEqual(tailInsert.result, [...fullList, 0]);
 
   await selectWorkbenchAlgorithm(page, 'sparse-matrix-transpose');
   await page.fill('#e-rows', '1');

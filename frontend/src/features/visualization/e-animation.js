@@ -4,7 +4,7 @@ import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from '
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
 export function usesFullECanvas(algorithm) {
-  return algorithm === 'array-list-reverse' || algorithm === 'kth-from-end';
+  return algorithm === 'array-list-reverse' || algorithm === 'singly-linked-list-insert' || algorithm === 'kth-from-end';
 }
 
 function reverseFrame(step) {
@@ -39,6 +39,8 @@ function arrayFrame(step) {
 const listId = id => id == null ? null : 'n' + id;
 function listFrame(step, previous, fitViewport) {
   const v = step.variables;
+  const inserting = step.algorithm === 'singly-linked-list-insert';
+  const finding = step.algorithm === 'kth-from-end';
   const chain = linkedChain(v);
   const onChain = new Set(chain.map(node => node.id));
   const oldLinks = new Map(previous?.variables.nodes.map(node => [node.id, node.next]));
@@ -46,10 +48,13 @@ function listFrame(step, previous, fitViewport) {
   const otherChain = linkedChain({ nodes: v.nodes, headId: v.nextId }).filter(node => !onChain.has(node.id));
   const placed = new Set([...onChain, ...otherChain.map(node => node.id)]);
   const ordered = [...chain, ...otherChain, ...v.nodes.filter(node => !placed.has(node.id))];
-  const result = fitViewport ? step.result : null;
+  const detached = inserting ? ordered.find(node => !onChain.has(node.id)) : null;
+  const previousChain = inserting && previous ? new Set(linkedChain(previous.variables).map(node => node.id)) : null;
+  const joined = previousChain ? chain.find(node => !previousChain.has(node.id)) : null;
+  const result = finding ? step.result : null;
   const nodes = ordered.map(node => ({
     id: listId(node.id), value: node.value, next: listId(node.next),
-    ...(fitViewport ? { label: '#' + node.id }
+    ...(fitViewport ? { label: '#' + node.id + (inserting && node.next === null ? ' · NULL' : '') }
       : { badge: pointers.filter(([id]) => id === node.id).map(([, label]) => label).join('／') }),
   }));
   const changed = previous ? v.nodes.filter(node => !oldLinks.has(node.id) || node.next !== oldLinks.get(node.id)) : [];
@@ -58,22 +63,32 @@ function listFrame(step, previous, fitViewport) {
   const perRow = Math.min(6, Math.max(2, nodes.length));
   const canvasWidth = 76 + perRow * nodeW + (perRow - 1) * gap;
   const canvasHeight = Math.max(168, 54 + Math.ceil(nodes.length / perRow) * 92);
-  const name = result?.nodeId != null ? `找到结点 #${result.nodeId}，值 ${result.value}`
-    : fitViewport && v.fastId === null ? '快指针已越过链尾（fast = NULL）' : '';
+  let name = '';
+  const nodePointers = [];
+  if (finding) {
+    if (result?.nodeId != null) name = `找到结点 #${result.nodeId}，值 ${result.value}`;
+    else if (v.fastId === null) name = '快指针已越过链尾（fast = NULL）';
+    if (v.fastId != null) nodePointers.push({ id: 'fast', node: listId(v.fastId), label: '快 fast' });
+    if (v.slowId != null) nodePointers.push({ id: 'slow', node: listId(v.slowId), label: '慢 slow' });
+  } else if (detached) {
+    name = `新结点 #${detached.id} 尚未接入链表`;
+    nodePointers.push({ id: 'new', node: listId(detached.id), label: '链外' });
+  } else if (joined) {
+    name = `新结点 #${joined.id} 已接入链表`;
+    nodePointers.push({ id: 'new', node: listId(joined.id), label: '新结点' });
+  }
+  const highlighted = result?.nodeId ?? joined?.id;
   return [linkLayer({
-    id: 'e-list', title: fitViewport ? '链表与快慢指针' : '链表节点与 next 指针', name, nodes,
+    id: 'e-list', title: finding ? '链表与快慢指针' : '链表节点与 next 指针', name, nodes,
     head: listId(v.headId), order: nodes.map(node => node.id),
     roles: {
       swap: [v.currId, v.fastId].map(listId).filter(Boolean),
       focus2: [result?.nodeId === v.slowId ? null : v.slowId, v.prevId].map(listId).filter(Boolean),
       added: changed.map(node => listId(node.id)),
-      done: result?.nodeId != null ? [listId(result.nodeId)] : [],
-      pointers: fitViewport ? [
-        { id: 'fast', node: listId(v.fastId), label: '快 fast' },
-        { id: 'slow', node: listId(v.slowId), label: '慢 slow' },
-      ].filter(pointer => pointer.node !== null) : [],
+      done: highlighted == null ? [] : [listId(highlighted)],
+      pointers: nodePointers,
     },
-    props: { canvasWidth, canvasHeight, nodeW, nodeH: 36, gap, fitViewport },
+    props: { canvasWidth, canvasHeight, nodeW, nodeH: 36, gap, fitViewport, showTailMarker: !inserting },
   })];
 }
 

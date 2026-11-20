@@ -40,12 +40,19 @@ try {
   await page.locator('#uf-edit').waitFor();
   assert.equal(await page.locator('#uf-fields').isHidden(), true);
   const rows = page.locator('.uf-table tbody tr');
+  const forest = page.locator('[data-viz-engine="plus-graph"] [data-layer="b-forest"]');
+  const links = () => forest.locator('[data-avc-key^="e-"]').evaluateAll(edges =>
+    edges.map(edge => edge.dataset.avcKey).sort());
+  await forest.waitFor();
+  assert.deepEqual(await links(), []);
   assert.equal(await rows.count(), 4);
   await page.click('[data-t="last"]');
   assert.deepEqual(await rows.evaluateAll(rows => rows.map(row => row.cells[1].textContent)), ['A', 'A', 'A', 'D']);
   assert.equal(await page.locator('#varMid').innerText(), '2');
+  assert.deepEqual(await links(), ['e-B-A', 'e-C-A']);
   await page.click('#resetBtn');
   assert.deepEqual(await rows.evaluateAll(rows => rows.map(row => row.cells[1].textContent)), ['A', 'B', 'C', 'D']);
+  assert.deepEqual(await links(), []);
   await page.click('#nextBtn');
   assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'), 'parent-self');
   await page.click('#tutor-toggle');
@@ -75,6 +82,31 @@ try {
     assert.equal(single.status(), 200);
     assert.equal((await single.json()).result.setCount, 1);
   }
+  await page.click('#fillDemo');
+  await page.click('#uf-next');
+  await page.click('#uf-add');
+  const operations = [['union', 'A', 'B'], ['union', 'C', 'D'], ['union', 'A', 'C'], ['find', 'D']];
+  for (const [index, [action, x, y]] of operations.entries()) {
+    const inputs = page.locator('.uf-operation').nth(index).locator('select');
+    await inputs.nth(0).selectOption(action);
+    await inputs.nth(1).selectOption(x);
+    if (y) await inputs.nth(2).selectOption(y);
+  }
+  const compressionPending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/union-find/runs'));
+  await page.click('#startBtn');
+  const compression = await (await compressionPending).json();
+  await page.locator('#uf-edit').waitFor();
+  const ruler = page.locator('[data-tl-ruler]');
+  const change = compression.steps.find((step, index) => index > 0 &&
+    step.variables.parent.D === 'A' && compression.steps[index - 1].variables.parent.D === 'C');
+  assert.ok(change);
+  for (let i = 0; i < change.stepIndex; i++) await ruler.press('ArrowRight');
+  assert.ok((await links()).includes('e-D-A'));
+  assert.equal(await forest.locator('[data-avc-key="e-D-A"] line').getAttribute('stroke'), '#d94b4b');
+  await ruler.press('ArrowLeft');
+  assert.ok((await links()).includes('e-D-C'));
+  assert.ok(!(await links()).includes('e-D-A'));
+
   await selectWorkbenchAlgorithm(page, 'binary-search');
   await page.click('#fillDemo');
   await page.click('#startBtn');

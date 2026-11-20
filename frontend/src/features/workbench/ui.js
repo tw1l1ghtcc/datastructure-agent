@@ -1,3 +1,4 @@
+import { eAlgorithm } from './e-algorithms.js';
 import { gAlgorithm } from './g-algorithms.js';
 import { dataAlgorithm as cAlgorithm } from './data-algorithms.js';
 import { arraySearch } from './array-search.js';
@@ -113,7 +114,7 @@ export function createWorkbenchUI({ onNavigate = () => {} } = {}) {
        按目录校验 id（plusCase），避免接受任意脏值。 */
     const plusId = isPlus(requestedAlgorithm) ? String(requestedAlgorithm).slice('plus:'.length) : null;
     const knownPlus = Boolean(plusId && plusCase(plusId));
-    if (name === 'workbench' && (['insertion-sort', 'binary-insertion-sort', 'shell-sort', 'selection-sort', 'quick-sort', 'heap-sort', 'merge-sort', 'binary-search', 'bubble-sort', 'custom-array', 'union-find'].includes(requestedAlgorithm) || gAlgorithm(requestedAlgorithm) || graphAlgorithm(requestedAlgorithm) || arraySearch(requestedAlgorithm) || cAlgorithm(requestedAlgorithm) || knownPlus)) {
+    if (name === 'workbench' && (['insertion-sort', 'binary-insertion-sort', 'shell-sort', 'selection-sort', 'quick-sort', 'heap-sort', 'merge-sort', 'binary-search', 'bubble-sort', 'custom-array', 'union-find'].includes(requestedAlgorithm) || eAlgorithm(requestedAlgorithm) || gAlgorithm(requestedAlgorithm) || graphAlgorithm(requestedAlgorithm) || arraySearch(requestedAlgorithm) || cAlgorithm(requestedAlgorithm) || knownPlus)) {
       query.set('algorithm', requestedAlgorithm);
     }
     const hash = '#' + name + (query.size ? '?' + query : '');
@@ -221,16 +222,16 @@ export function createWorkbenchUI({ onNavigate = () => {} } = {}) {
     setAlgorithm(value) {
       algorithm = value;
       /* 合并（PR #66 §1）：主分支把 G/C/并查集也算"无练习"；我们另加 plus 预览不接问答 */
-      panel.querySelector('.tutor-practice').hidden = Boolean(graphAlgorithm(value) || arraySearch(value) || cAlgorithm(value) || value === 'union-find' || gAlgorithm(value));
+      panel.querySelector('.tutor-practice').hidden = Boolean(graphAlgorithm(value) || arraySearch(value) || cAlgorithm(value) || value === 'union-find' || gAlgorithm(value) || eAlgorithm(value));
       /* plus 示例是本地预览：后端没有这次运行的记录，步骤问答必然 404（评审报告 §3.10）→ 直接关掉入口 */
       const tutorUnavailable = value === 'custom-array' || isPlus(value);
       if (tutorUnavailable && open) show(false, false);
       ball.hidden = currentPage !== 'workbench' || tutorUnavailable;
     },
     setContext(context) {
-      const g = gAlgorithm(algorithm);
-      if (g) {
-        $('tutor-prompt').textContent = g.prompt;
+      const data = eAlgorithm(algorithm) ?? gAlgorithm(algorithm);
+      if (data) {
+        $('tutor-prompt').textContent = data.prompt;
         return;
       }
       if (cAlgorithm(algorithm)) {

@@ -32,6 +32,16 @@ import { generateLinearSearchSteps } from '../../../shared/algorithms/final/d/li
 import { generateBlockSearchSteps } from '../../../shared/algorithms/final/d/block-search.js';
 import { generateBfsSteps } from '../../../shared/algorithms/final/b/bfs.js';
 import { validateGraphInput } from '../../../shared/algorithms/final/b/validate-util.js';
+import { eAlgorithm, validateEInput } from '../../../frontend/src/features/workbench/e-algorithms.js';
+import { generateArrayListDeleteRangeSteps } from '../../../shared/algorithms/final/e/array-list-delete-range.js';
+import { generateArrayListReverseSteps } from '../../../shared/algorithms/final/e/array-list-reverse.js';
+import { generateSinglyLinkedInsertSteps } from '../../../shared/algorithms/final/e/singly-linked-list-insert.js';
+import { generateSinglyLinkedListDeleteSteps } from '../../../shared/algorithms/final/e/singly-linked-list-delete.js';
+import { generateSinglyLinkedListReverseSteps } from '../../../shared/algorithms/final/e/singly-linked-list-reverse.js';
+import { generateKthFromEndSteps } from '../../../shared/algorithms/final/e/kth-from-end.js';
+import { generateSparseMatrixTransposeSteps } from '../../../shared/algorithms/final/e/sparse-matrix-transpose.js';
+import { generateCountingSortSteps } from '../../../shared/algorithms/final/e/counting-sort.js';
+import { generateRadixSortSteps } from '../../../shared/algorithms/final/e/radix-sort.js';
 import { createRun, getRun } from '../runs/store.js';
 
 // --- A包新增导入 ---
@@ -107,6 +117,33 @@ export function handleCreateGRun(res, body, algorithm) {
     ? { replay: result, ...restoreBinarySearchTreeRun(result) }
     : result;
   sendRun(res, createRun({ algorithm, input, ...runData }));
+}
+
+const eGenerators = {
+  'array-list-delete-range': generateArrayListDeleteRangeSteps,
+  'array-list-reverse': generateArrayListReverseSteps,
+  'singly-linked-list-insert': generateSinglyLinkedInsertSteps,
+  'singly-linked-list-delete': generateSinglyLinkedListDeleteSteps,
+  'singly-linked-list-reverse': generateSinglyLinkedListReverseSteps,
+  'kth-from-end': generateKthFromEndSteps,
+  'sparse-matrix-transpose': generateSparseMatrixTransposeSteps,
+  'radix-sort': generateRadixSortSteps,
+  'counting-sort': generateCountingSortSteps,
+};
+
+export function handleCreateERun(res, body, algorithm) {
+  let input;
+  try {
+    input = JSON.parse(body);
+    validateEInput(eAlgorithm(algorithm), input);
+  } catch (error) {
+    if (!(error instanceof TypeError || error instanceof SyntaxError)) throw error;
+    return sendError(res, 400, 'INVALID_INPUT', error.message);
+  }
+  const result = eGenerators[algorithm](input);
+  const last = result.steps.at(-1);
+  if (last.event === 'error') return sendError(res, 400, 'INVALID_INPUT', last.description);
+  sendRun(res, createRun({ algorithm, input, ...result }));
 }
 
 const dGenerators={

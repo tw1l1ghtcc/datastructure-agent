@@ -64,7 +64,8 @@ try {
   assert.deepEqual(run.result, ['A', 'B', 'C', 'D']);
   const stepResponse = await page.request.get(base + '/api/runs/' + run.runId + '/steps/0');
   assert.equal(stepResponse.status(), 200);
-  const isolated = page.locator('[data-bfs-node="E"] circle');
+  await page.locator('[data-viz-engine="plus-graph"]').waitFor();
+  const isolated = page.locator('[data-graph-node="E"] circle');
   await isolated.waitFor();
   assert.equal(await page.locator('#bfs-fields').isHidden(), true);
   assert.equal(await page.locator('#fillDemo').isHidden(), true);
@@ -80,7 +81,7 @@ try {
   assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'), 'init');
   await page.click('[data-t="last"]');
   assert.match(await page.locator('[data-explain-host]').innerText(), /A -> B -> C -> D/);
-  assert.equal(await isolated.getAttribute('fill'), '#fff');
+  assert.equal(await isolated.getAttribute('fill'), '#eef4ff');
 
   const enqueue = run.steps.find(step => step.event === 'enqueue-neighbor');
   await page.locator('[data-tl-ruler]').focus();
@@ -170,6 +171,21 @@ try {
     assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'), graphRun.steps.at(-1).lineId);
     assert.equal(await page.locator('[data-explain-host] .bsviz-caption').innerText(), graphRun.steps.at(-1).description);
     assert.ok((await page.locator('[data-explain-host] .bsviz-status').innerText()).length > 10, algorithm);
+    assert.equal(await page.locator('[data-viz-engine="plus-graph"] [data-graph-node]').count(), graphRun.graph.nodes.length);
+    if (algorithm === 'kruskal') {
+      const selected = page.locator('[data-layer="b-graph"] [data-avc-key^="e-"] line[stroke="#0a6b4a"]');
+      assert.equal(await selected.count(), graphRun.result.selectedEdges.length);
+    }
+    if (algorithm === 'floyd') {
+      const table = page.locator('.b-animation-data .uf-table');
+      const values = await table.locator('tbody tr').evaluateAll(rows =>
+        rows.map(row => Array.from(row.querySelectorAll('td'), cell => cell.textContent).join(', ')));
+      assert.deepEqual(values, graphRun.steps.at(-1).variables.matrix);
+      await page.locator('[data-tl-ruler]').press('Home');
+      const initial = await table.locator('tbody tr').evaluateAll(rows =>
+        rows.map(row => Array.from(row.querySelectorAll('td'), cell => cell.textContent).join(', ')));
+      assert.deepEqual(initial, graphRun.steps[0].variables.matrix);
+    }
     const agent = await page.request.post(base + '/api/agent/explain', {
       data: { runId: graphRun.runId, stepIndex: 1, question: '这一步发生了什么？', hintLevel: 2 }
     });
@@ -187,6 +203,29 @@ try {
   await page.locator('#bfs-edit').waitFor();
   await page.click('[data-t="last"]');
   assert.match(await page.locator('[data-explain-host]').innerText(), /存在环/);
+
+  await selectWorkbenchAlgorithm(page, 'bfs');
+  await page.click('#fillDemo');
+  await page.click('#bfs-next');
+  await page.selectOption('#bfs-directed', 'true');
+  for (const [from, to] of [['B', 'A'], ['D', 'D']]) {
+    await page.click('#bfs-add-edge');
+    const row = page.locator('.bfs-edge').last();
+    await row.locator('select').nth(0).selectOption(from);
+    await row.locator('select').nth(1).selectOption(to);
+  }
+  const directedPending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/bfs/runs'));
+  await page.click('#startBtn');
+  assert.equal((await directedPending).status(), 200);
+  await page.locator('#bfs-edit').waitFor();
+  const edge = key => page.locator('[data-layer="b-graph"] [data-avc-key="' + key + '"]');
+  const route = key => edge(key).locator('polyline:not([data-role="arrow"])').getAttribute('points');
+  assert.notEqual(await route('e-A-B'), await route('e-B-A'));
+  assert.equal((await route('e-D-D')).split(' ').length, 4);
+  assert.equal(await edge('e-D-D').locator('[data-role="arrow"]').count(), 1);
+  await page.locator('[data-tl-ruler]').press('End');
+  await page.locator('[data-tl-ruler]').press('Home');
+  assert.equal(await edge('e-D-D').locator('[data-role="arrow"]').count(), 1);
 
   await selectWorkbenchAlgorithm(page, 'binary-search');
   await page.click('#fillDemo');

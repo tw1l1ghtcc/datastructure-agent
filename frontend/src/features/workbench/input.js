@@ -1,3 +1,4 @@
+import { eAlgorithm, validEStep, validateEInput } from './e-algorithms.js';
 import { gAlgorithm } from './g-algorithms.js';
 import { dataAlgorithm as cAlgorithm } from './data-algorithms.js';
 import { arraySearch, arraySearchMaxElements } from './array-search.js';
@@ -103,6 +104,8 @@ function validVariables(step, algorithm) {
   const variables = step.variables;
   if (!variables) return false;
   if (cAlgorithm(algorithm)) return step.algorithm === algorithm && typeof step.description === 'string' && typeof variables === 'object';
+  const e = eAlgorithm(algorithm);
+  if (e) return step.algorithm === algorithm && typeof step.description === 'string' && validEStep(e, step);
   const g = gAlgorithm(algorithm);
   if (g) {
     return step.algorithm === algorithm && typeof step.description === 'string' && typeof variables === 'object' &&
@@ -159,9 +162,11 @@ export function validateRun(run, algorithm = 'binary-search') {
   if (graph && (!Array.isArray(run.graph?.nodes) || !Array.isArray(run.graph?.edges) || typeof run.graph.directed !== 'boolean')) {
     throw new Error('缺少本次运行的图结构。');
   }
+  const e = eAlgorithm(algorithm);
+  if (e) validateEInput(e, run.input);
   const ids = new Set(run.sourceLines.map(line => line?.lineId));
   if (ids.size !== run.sourceLines.length || run.sourceLines.some(line => typeof line?.lineId !== 'string' || typeof line.text !== 'string') ||
-      run.steps.some((step,i) => !step || step.stepIndex !== i || !ids.has(step.lineId) || (!graph && !cAlgorithm(algorithm) && algorithm !== 'union-find' && !gAlgorithm(algorithm) && !Array.isArray(step.array)) ||
+      run.steps.some((step,i) => !step || step.stepIndex !== i || !ids.has(step.lineId) || (!graph && !cAlgorithm(algorithm) && algorithm !== 'union-find' && !gAlgorithm(algorithm) && !e && !Array.isArray(step.array)) ||
         !validVariables(step, algorithm))) throw new Error('步骤或源码映射不完整，无法同步展示。');
   return run;
 }

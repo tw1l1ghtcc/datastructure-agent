@@ -1,4 +1,7 @@
 import { createRun, requestJSON } from './services/api.js';
+import { eAlgorithm } from './features/workbench/e-algorithms.js';
+import { eVariableText } from './features/workbench/e-state.js';
+import { createEForm } from './features/workbench/e-form.js';
 import { gAlgorithm } from './features/workbench/g-algorithms.js';
 import { gVariableText } from './features/workbench/g-state.js';
 import { createGForm } from './features/workbench/g-form.js';
@@ -39,7 +42,8 @@ const selectedGraph = () => graphAlgorithm(selectedAlgorithm);
 const isUnionFind = () => selectedAlgorithm === 'union-find';
 const selectedC = () => dataAlgorithm(selectedAlgorithm);
 const selectedG = () => gAlgorithm(selectedAlgorithm);
-const structuredInput = () => Boolean(selectedGraph() || isUnionFind() || selectedC() || selectedG());
+const selectedE = () => eAlgorithm(selectedAlgorithm);
+const structuredInput = () => Boolean(selectedGraph() || isUnionFind() || selectedC() || selectedG() || selectedE());
 const isCustom = () => selectedAlgorithm === 'custom-array';
 const variableIds = ['varLeft', 'varRight', 'varMid', 'varValue'];
 const binaryHelp = $('input-help').textContent;
@@ -51,7 +55,8 @@ const graphForm = createGraphForm({ message, onChange: updateGraphDraft });
 const unionFindForm = createUnionFindForm({ message, onChange: updateGraphDraft });
 const cForm = createDataForm({ message, onChange: updateGraphDraft });
 const gForm = createGForm({ binaryForm: createLevelOrderForm({ message, onChange: updateGraphDraft }), message, onChange: updateGraphDraft });
-const runButtonLabel = () => structuredInput() ? (run ? '重新运行' : '运行 ' + (selectedG()?.title ?? selectedC()?.title ?? (isUnionFind() ? '并查集' : selectedGraph().name))) : isCustom() ? '编译并运行' : '开始分析';
+const eForm = createEForm({ message, onChange: updateGraphDraft });
+const runButtonLabel = () => structuredInput() ? (run ? '重新运行' : '运行 ' + (selectedE()?.title ?? selectedG()?.title ?? selectedC()?.title ?? (isUnionFind() ? '并查集' : selectedGraph().name))) : isCustom() ? '编译并运行' : '开始分析';
 const ui = createWorkbenchUI({
   onNavigate(page, algorithm) {
     if (page !== 'workbench' && playback?.getState().playing) playback.pause();
@@ -135,8 +140,11 @@ function render(state) {
   viz.setStep(step, state);
   const v = step.variables;
   let values;
+  const e = selectedE();
   const g = selectedG();
-  if (g) {
+  if (e) {
+    values = e.fields.map(([key]) => eVariableText(key, step, run.input, run.steps[step.stepIndex - 1]));
+  } else if (g) {
     values = g.fields.map(([key]) => gVariableText(g, key, v));
   } else if (selectedC()) {
     values = selectedC().fields.map(([key]) => stateText(step.variables[key]));
@@ -236,7 +244,7 @@ async function start(event) {
   try {
     /* 合并（PR #66 §1）：plus 示例输入优先；其余保持主分支的 G/C/并查集/图/数组分发 */
     input = isPlus(algorithm) ? plusUi.read()
-      : selectedG() ? gForm.read() : selectedC() ? cForm.read() : isUnionFind() ? unionFindForm.read() : selectedGraph() ? graphForm.read() : parseInput($('arrInput').value, $('targetInput').value, algorithm);
+      : selectedE() ? eForm.read() : selectedG() ? gForm.read() : selectedC() ? cForm.read() : isUnionFind() ? unionFindForm.read() : selectedGraph() ? graphForm.read() : parseInput($('arrInput').value, $('targetInput').value, algorithm);
   } catch (error) {
     message(error.message, true);
     return;
@@ -299,7 +307,8 @@ async function start(event) {
     playback=createPlayback({runId:run.runId,steps:run.steps,intervalMs:speedMs,onStepChange:render});
     render({...playback.getState(),step:run.steps[0]});
     if (structured) {
-      if (selectedG()) gForm.summarize(run.input);
+      if (selectedE()) eForm.summarize(run.input);
+      else if (selectedG()) gForm.summarize(run.input);
       else if (selectedC()) cForm.summarize(run.input);
       else if (isUnionFind()) unionFindForm.summarize(run.input);
       else graphForm.summarize(run.graph);
@@ -351,35 +360,39 @@ function configureAlgorithm() {
   const c = selectedC();
   const g = selectedG();
   const plus = isPlus(selectedAlgorithm);
+  const e = selectedE();
+  const data = e ?? g ?? c;
+  const structured = structuredInput();
   graphForm.setAlgorithm(graph);
   unionFindForm.setActive(uf);
   cForm.setAlgorithm(c);
   gForm.setAlgorithm(g);
+  eForm.setAlgorithm(e);
   $('run-form').hidden = false;
-  $('arrInput').closest('label').hidden = Boolean(graph || uf || c || g) || plus;
+  $('arrInput').closest('label').hidden = structured || plus;
   $('plus-input-fields').hidden = !plus;
   $('run-form').classList.toggle('plus-input', plus);
-  $('input-help').hidden = Boolean(graph || uf || c || g) || plus;
-  $('run-form').classList.toggle('bfs-input', Boolean(graph || uf || c || g));
-  $('code-panel').classList.toggle('graph-workspace', Boolean(graph || uf || c || g));
+  $('input-help').hidden = structured || plus;
+  $('run-form').classList.toggle('bfs-input', structured);
+  $('code-panel').classList.toggle('graph-workspace', structured);
   $('code-panel').classList.toggle('floyd-workspace', selectedAlgorithm === 'floyd');
   const sortTitles = { 
     'bubble-sort': '冒泡排序', 'insertion-sort': '直接插入排序', 'binary-insertion-sort': '折半插入排序', 'shell-sort': '希尔排序', 
     'selection-sort': '简单选择排序', 'quick-sort': '快速排序', 'heap-sort': '堆排序', 'merge-sort': '归并排序' 
   };
-  $('workbench-footer-detail').textContent = g || c ? '状态表与源码随真实步骤同步' : uf ? '每个元素的父节点指向自己时，它就是根' : graph ? '图结构和步骤来自本次运行' : '数组下标从 0 开始';
-  $('visualization-panel').setAttribute('aria-label', g || c ? (g ?? c).title + ' 执行状态表' : uf ? '并查集执行状态表' : graph ? graph.name + ' 执行过程，可用左右方向键单步操作' : '数组动画，可用左右方向键单步操作');
-  $('workbench-heading').textContent = (g?.title ?? c?.title ?? (uf ? '并查集' : graph?.title)) ?? search?.title ?? (custom ? '自定义代码' : sorting ? sortTitles[selectedAlgorithm] : '二分查找');
-  $('source-file').textContent = g || c ? selectedAlgorithm.replaceAll('-', '_') + '.cpp' : uf ? 'union_find.cpp' : graph ? selectedAlgorithm.replace('-', '_') + '.cpp' : search?.file ?? (custom ? '用户源码' : sorting ? selectedAlgorithm.replaceAll('-', '_') + '.cpp' : 'binary_search.cpp');
+  $('workbench-footer-detail').textContent = data ? '动画、状态表与源码随真实步骤同步' : uf ? '每个元素的父节点指向自己时，它就是根' : graph ? '图结构和步骤来自本次运行' : '数组下标从 0 开始';
+  $('visualization-panel').setAttribute('aria-label', data ? data.title + ' 动画与执行状态' : uf ? '并查集父指针森林和状态表' : graph ? graph.name + ' 执行过程，可用左右方向键单步操作' : '数组动画，可用左右方向键单步操作');
+  $('workbench-heading').textContent = (data?.title ?? (uf ? '并查集' : graph?.title)) ?? search?.title ?? (custom ? '自定义代码' : sorting ? sortTitles[selectedAlgorithm] : '二分查找');
+  $('source-file').textContent = data ? selectedAlgorithm.replaceAll('-', '_') + '.cpp' : uf ? 'union_find.cpp' : graph ? selectedAlgorithm.replace('-', '_') + '.cpp' : search?.file ?? (custom ? '用户源码' : sorting ? selectedAlgorithm.replaceAll('-', '_') + '.cpp' : 'binary_search.cpp');
   $('array-label').textContent = selectedAlgorithm === 'block-search' ? '分块数组' : custom || search ? '输入数组' : sorting ? '待排序数组' : '有序数组';
   $('arrInput').value = '';
   $('arrInput').placeholder = search ? '例如：' + search.example : sorting || custom ? '例如：5, 1, 4, 2' : '例如：1, 3, 5, 7, 9';
-  $('target-field').hidden = sorting || custom || Boolean(graph) || uf || Boolean(c || g);
+  $('target-field').hidden = sorting || custom || structured;
   $('custom-code-fields').hidden = !custom;
   $('run-form').classList.toggle('sorting-input', sorting || custom);
   $('input-help').textContent = custom ? '本机 Windows 编译运行。最多 24 个 32 位整数，逗号分隔；留空为空数组。'
     : sorting ? '最多 24 个安全整数，逗号分隔；留空为空数组。允许负数和重复值。' : search?.help ?? binaryHelp;
-  let labels = g || c ? (g ?? c).fields.map(([, label]) => label) : uf ? ['当前操作', '查找路径', '集合数量', '失败操作数'] : graph ? graph.fields.map(([, label]) => label) : custom ? ['源码行', '写入下标', '写入值', '写入次数']
+  let labels = data ? data.fields.map(([, label]) => label) : uf ? ['当前操作', '查找路径', '集合数量', '失败操作数'] : graph ? graph.fields.map(([, label]) => label) : custom ? ['源码行', '写入下标', '写入值', '写入次数']
     : selectedAlgorithm === 'block-search' ? ['当前块', '块最大值', '数组下标', '当前元素']
     : search ? ['当前下标', '当前元素', '目标值', '比较次数']
     : plus ? ['变量 1', '变量 2', '变量 3', '变量 4']
@@ -404,7 +417,7 @@ function configureAlgorithm() {
   algorithmMenu.setSelected(selectedAlgorithm);
   ui.setAlgorithm(selectedAlgorithm);
   clearRun();
-  if (!custom && !graph && !search && !uf && !c && !g) exercises.setTopic(selectedAlgorithm);
+  if (!custom && !search && !structured) exercises.setTopic(selectedAlgorithm);
   message('');
 }
 function updateGraphDraft() {
@@ -428,6 +441,7 @@ $('plus-sample').addEventListener('change', () => { plusUi.fill(Number($('plus-s
 $('plus-variant').addEventListener('change', () => { invalidateInput(); message('已切到变体「' + $('plus-variant').selectedOptions[0]?.textContent + '」，点「开始分析」重跑。'); });
 $('fillDemo').addEventListener('click', () => {
   /* 合并（PR #66 §1）：主分支的 G/C/并查集/图分支 + 我们的 plus 示例与自定义代码示例库 */
+  if (selectedE()) { updateGraphDraft(); eForm.fillDemo(); return; }
   if (selectedG()) { updateGraphDraft(); gForm.fillDemo(); return; }
   if (selectedC()) {
     updateGraphDraft(); cForm.fillDemo();

@@ -26,6 +26,28 @@ const EDGE_STYLE = {
   path: { stroke: '#6650cf', sw: 2.2, dash: null, label: '路径' },
 };
 
+function toward([x, y], [tx, ty], radius) {
+  const length = Math.hypot(tx - x, ty - y) || 1;
+  return [x + (tx - x) * radius / length, y + (ty - y) * radius / length];
+}
+
+function routeEdge(edge, a, b, radius, rect) {
+  if (edge.from === edge.to) {
+    const [x, y] = a;
+    const side = y < rect.y + 64 ? 1 : -1;
+    const left = [x - 23, y + side * 38], right = [x + 23, y + side * 38];
+    return {
+      points: [toward(a, left, radius), left, right, toward(a, right, radius)],
+      label: [x, y + side * 48],
+    };
+  }
+  if (!edge.bend) return null;
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const length = Math.hypot(dx, dy) || 1;
+  const middle = [(a[0] + b[0]) / 2 - dy * 17 / length, (a[1] + b[1]) / 2 + dx * 17 / length];
+  return { points: [toward(a, middle, radius), middle, toward(b, middle, radius)], label: middle };
+}
+
 export function layout(layer, rect, env = {}) {
   const { data, props } = layer;
   const roles = norm(layer.roles);
@@ -68,6 +90,10 @@ export function layout(layer, rect, env = {}) {
     const b = pos.get(e.to);
     if (!a || !b) continue;
     const st = EDGE_STYLE[e.state] || EDGE_STYLE.idle;
+    const directed = e.directed ?? props.directed ?? false;
+    const paint = { stroke: st.stroke, sw: st.sw, dash: st.dash, arrow: directed ? 'end' : null, z: 1 };
+    const route = props.routedEdges ? routeEdge(e, a, b, nodeR, rect) : null;
+    const edgeKey = key(`e-${e.from}-${e.to}`);
     const dx = b[0] - a[0];
     const dy = b[1] - a[1];
     const len = Math.hypot(dx, dy) || 1;
@@ -75,10 +101,10 @@ export function layout(layer, rect, env = {}) {
     const y1 = a[1] + (dy / len) * nodeR;
     const x2 = b[0] - (dx / len) * nodeR;
     const y2 = b[1] - (dy / len) * nodeR;
-    const directed = e.directed ?? props.directed ?? false;
-    prims.push(P.line(key(`e-${e.from}-${e.to}`), x1, y1, x2, y2, { stroke: st.stroke, sw: st.sw, dash: st.dash, arrow: directed ? 'end' : null, z: 1 }));
+    prims.push(route ? P.poly(edgeKey, route.points, paint) : P.line(edgeKey, x1, y1, x2, y2, paint));
     if (e.w != null && props.weighted !== false) {
-      prims.push(P.chip(key(`w-${e.from}-${e.to}`), (x1 + x2) / 2, (y1 + y2) / 2 - 10, String(e.w), { size: 10, fill: '#ffffff', stroke: st.stroke, color: st.stroke }));
+      const [labelX, labelY] = route?.label ?? [(x1 + x2) / 2, (y1 + y2) / 2 - 10];
+      prims.push(P.chip(key(`w-${e.from}-${e.to}`), labelX, labelY, String(e.w), { size: 10, fill: '#ffffff', stroke: st.stroke, color: st.stroke }));
     }
   }
 

@@ -13,6 +13,7 @@
 | POST /api/algorithms/bubble-sort/runs | 200，创建并返回冒泡排序 run | 01 |
 | POST /api/algorithms/{D包树或哈希算法}/runs | 200，创建树或哈希运行 | 01 |
 | POST /api/algorithms/{C包算法}/runs | 200，创建归并或多路查找树运行 | 01 |
+| POST /api/algorithms/{E包算法}/runs | 200，创建线性表、矩阵或分配排序运行 | 01 |
 | POST /api/algorithms/{G包算法}/runs | 200，创建 G 包运行。二叉排序树返回紧凑回放 | 01 |
 | POST /api/algorithms/union-find/runs | 200，创建并查集运行 | 01 |
 | POST /api/algorithms/{图算法}/runs | 200，创建并返回图算法 run | 01 |
@@ -54,6 +55,20 @@ stepIndex 使用十进制非负整数字符串；超出已存在 run 的步骤�
 D 包新增 `avl-tree`、`red-black-tree`、`hash-linear-probing`、`hash-quadratic-probing`、`hash-double-hashing` 和 `hash-chaining`。树请求为 `{keys,target?}`，三种探测为 `{keys,capacity,target?}`，拉链法为 `{keys,bucketCount,target?}`。沿用已有 D 包实现及限制，最多 64 个插入键，容量／桶数 1～1024。平方探测容量须为奇素数，双散列容量须为不小于 2 的素数。工作台先展示槽位、桶链和节点状态表，支持建表／建树后查询一个键，留空查询则只执行插入。运行保留输入快照 `input`，与现有接口共用步骤查询及问答。
 
 C 包运行标识为 `optimal-merge-tree`、`multiway-merge`、`replacement-selection`、`b-tree`、`b-plus-tree`。请求分别为 `{weights}`、`{runs,k}`、`{array,capacity}`、`{keys,queries,t}`、`{keys,queries}`。沿用 C 包现有上限及校验，见 [C 包接口](../../shared/algorithms/final/c/README.md)。运行保存输入快照 `input`，共用运行查询、步骤查询和问答接口。主工作台先展示状态表，树结构由引擎自动构建，动画待接入。
+
+E 包复用运行、单步查询及步骤问答。合法输入返回 `{runId,createdAt,algorithm,input,sourceVersion,sourceLines,steps,result}`。参数错误或引擎拒绝输入时返回 400 INVALID_INPUT。
+
+| 算法标识 | 请求体与参数 |
+| --- | --- |
+| `array-list-reverse`、`singly-linked-list-reverse` | `{list}`，可为空 |
+| `array-list-delete-range` | `{list,left,right}`，删除有效的零基闭区间 |
+| `singly-linked-list-insert` | `{list,pos,value}`，`pos` 从 0 到表长，`value` 为 32 位整数 |
+| `singly-linked-list-delete` | `{list,pos}`，`pos` 为现有元素的零基下标 |
+| `kth-from-end` | `{list,k}`，`k` 从 1 到表长，结果为 `{nodeId,value}` |
+| `sparse-matrix-transpose` | `{rows,cols,triples:[{i,j,e}]}`，非负矩阵尺寸，最多 64 列和 64 个三元组。行列下标从 0 开始，坐标唯一，`e` 为有限数值 |
+| `radix-sort`、`counting-sort` | `{list}`，基数排序接受非负整数，计数排序要求 `max - min + 1 ≤ 5000` |
+
+顺序表和链表最多 64 个元素，两个排序最多 24 个元素，序列元素均为 32 位有符号整数。链表快照保留 `headId` 和结点的稳定编号。转置从 `variables.triples[k]` 读取本步的三元组，使用 `pos` 标记输出位置。计数排序使用 `countDiff` 记录本步增量，工作台按当前步回放增量还原计数表。
 
 二叉树层序遍历接受 `{root,nodes}`，每个节点为 `{id,left,right}`，最多 64 个唯一非空字符串 ID。孩子为空时使用 null，非空孩子须引用已定义的节点。空树为 `{root:null,nodes:[]}`。拒绝环、共享孩子及从根不可达的节点。运行保留输入快照 `input`，步骤与 G 包引擎一致，包含节点关系、FIFO 队列及层号（根为第 1 层）、当前节点、访问顺序和分层结果。主工作台使用节点、队列和分层状态表，支持单步、回看和问答；树形动画待接入。
 

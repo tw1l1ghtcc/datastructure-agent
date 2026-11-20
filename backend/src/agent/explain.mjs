@@ -1,3 +1,5 @@
+import { eAlgorithm } from '../../../frontend/src/features/workbench/e-algorithms.js';
+import { eVariableText } from '../../../frontend/src/features/workbench/e-state.js';
 import { gAlgorithm } from '../../../frontend/src/features/workbench/g-algorithms.js';
 import { gVariableText } from '../../../frontend/src/features/workbench/g-state.js';
 import { dataAlgorithm as cAlgorithm } from '../../../frontend/src/features/workbench/data-algorithms.js';
@@ -89,11 +91,12 @@ async function explain(parsedBody, ctx = {}) {
   const graph = graphAlgorithm(run.algorithm);
   const search = arraySearch(run.algorithm);
   const c = cAlgorithm(run.algorithm);
+  const e = eAlgorithm(run.algorithm);
   const g = gAlgorithm(run.algorithm);
   const tree = run.algorithm === 'binary-tree-level-order';
   const bst = run.algorithm === 'binary-search-tree';
   const uf = run.algorithm === 'union-find';
-  const stepRefs = uf || c || g
+  const stepRefs = uf || c || g || e
     ? [{ runId, stepIndex: idx, algorithm: run.algorithm, event: ev, variables: step.variables }]
     : search
     ? [{ runId, stepIndex: idx, algorithm: run.algorithm, event: ev, target, array: arr, variables: step.variables }]
@@ -146,6 +149,13 @@ async function explain(parsedBody, ctx = {}) {
     answer=prefix+'层序遍历第 '+(stepNo+1)+' 步。'+step.description;
     if(level>=2)answer+=' 当前队列（队首在左）：'+(step.variables.queue.map(entry=>entry.id+'（第'+entry.level+'层）').join('、')||'空')+'。';
     if(level===3 && steps[idx+1])answer+=' 下一步：'+steps[idx+1].description;
+  } else if (e) {
+    answer = prefix + e.title + '第 ' + (stepNo + 1) + ' 步。' + step.description;
+    if (level >= 2) {
+      const details = e.fields.map(([key, label]) => label + '：' + eVariableText(key, step, run.input, steps[idx - 1]));
+      answer += ' ' + details.join('；') + '。';
+    }
+    if (level === 3 && steps[idx + 1]) answer += ' 下一步：' + steps[idx + 1].description;
   } else if (g) {
     answer = prefix + g.title + '第 ' + (stepNo + 1) + ' 步。' + step.description;
     if (level >= 2) {

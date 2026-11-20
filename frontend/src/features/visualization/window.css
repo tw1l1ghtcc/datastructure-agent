@@ -8,4 +8,46 @@
 @media(max-width:1100px){.vizwin .win-sub{display:none}.vizwin .win-bar{gap:6px;padding:10px}.vizwin .win-title{font-size:13px}.vizwin .win-action{font-size:9px;padding:3px 5px}.vizwin .viewport-head .vh-sub{display:none}.vizwin .timeline{padding:10px;gap:14px}.vizwin .tl-btn{width:27px;height:29px}.vizwin .tl-transport{gap:4px}}
 @media(max-width:760px){#visualization-panel{height:580px}.vizwin{resize:none}.vizwin .win-sub{display:initial}}
 @media(max-width:540px){#visualization-panel{height:560px}.vizwin .win-sub{display:none}.vizwin .win-action{padding:3px 5px}.vizwin .viewport-head{left:12px;right:12px;gap:4px}.vizwin .viewport-head .bl-btn{font-size:9px;padding:3px 5px}.vizwin [data-explain-host]{left:14px;width:calc(100% - 28px);max-height:32%}.vizwin .timeline{padding:10px 8px;gap:12px}.vizwin .tl-btn{width:26px;height:30px}.vizwin .viewport-hint{font-size:9px;left:12px}}
+#visualization-panel:has(.vizwin[data-graph-view="table"]) { height: 770px; }
+.vizwin[data-graph-view] .viewport {
+  display: grid;
+  grid-template-rows: auto 88px minmax(0, 1fr) auto;
+}
+.vizwin[data-graph-view] .viewport:has([data-explain-host]:empty) { grid-template-rows: auto 0 minmax(0, 1fr) auto; }
+.vizwin[data-graph-view] .viewport:has(.bsviz-explain[data-collapsed="true"]) { grid-template-rows: auto 29px minmax(0, 1fr) auto; }
+.vizwin[data-graph-view] .viewport-head { position: static; grid-row: 1; padding: 10px 14px; }
+.vizwin[data-graph-view] [data-explain-host] { position: static; grid-row: 2; width: auto; max-height: none; margin: 0 14px; }
+.vizwin[data-graph-view] .viewport-body { position: relative; grid-row: 3; min-height: 0; }
+.vizwin[data-graph-view="table"] .viewport-body { touch-action: pan-y; }
+.vizwin[data-graph-view] .viewport-hint { position: static; grid-row: 4; padding: 4px 14px 10px; }
+@media (max-width: 760px) {
+  #visualization-panel:has(.vizwin[data-graph-view="table"]) { height: 690px; }
+}
+
+#visualization-panel:has(.vizwin[data-trace-animation]) { height: 720px; }
+.vizwin[data-trace-animation] .viewport {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+.vizwin[data-trace-animation] .viewport-head { position: static; grid-row: 1; padding: 10px 14px; }
+.vizwin[data-trace-animation] [data-explain-host] {
+  position: static;
+  grid-row: 2;
+  width: auto;
+  max-height: 114px;
+  margin: 0 14px;
+  padding-bottom: 6px;
+}
+.vizwin[data-trace-animation] .viewport-body { position: relative; grid-row: 3; inset: auto; }
+.vizwin[data-trace-animation] .viewport-scene { width: max-content; min-width: 100%; padding: 6px 12px 14px; }
+.trace-animation-stage.plus-viz { width: max-content; height: auto; min-height: 0; overflow: visible; margin-bottom: 14px; }
+.trace-animation-stage .canvas-card header span { display: none; }
+.vizwin[data-trace-animation] :is(.e-state-tables, .level-order-tables) { max-width: 580px; }
+.vizwin[data-trace-animation] :is(.e-state-tables, .level-order-tables) :is(th, td) { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  #visualization-panel:has(.vizwin[data-trace-animation]) { height: 600px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .trace-animation-stage .avc-el :is(circle, rect, line, text) { transition: fill 220ms ease, stroke 220ms ease; }
+}
 .vizwin .viewport-legend{position:absolute;bottom:34px;left:14px;right:14px;display:flex;justify-content:center;flex-wrap:wrap;gap:5px 14px;font-size:10px;color:#738096;pointer-events:none}.vizwin .viewport-legend span{white-space:nowrap}.vizwin .viewport-legend b{display:inline-grid;place-items:center;width:17px;height:19px;margin-right:3px;border-radius:4px;font:600 10px/1 system-ui}.vizwin .legend-left{background:#e7f1fd;color:#0b5cad}.vizwin .legend-right{background:#fdf1e0;color:#8a4b00}.vizwin .legend-mid{background:#e6f6ef;color:#0a6b4a}body.is-viz-full .tutor-ball,body.is-viz-full .tutor-window{visibility:hidden}@media(max-width:540px){.vizwin .viewport-legend{gap:4px 8px;font-size:9px}.vizwin .viewport-legend b{width:15px;height:17px}}

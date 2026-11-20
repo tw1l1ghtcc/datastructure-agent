@@ -1,16 +1,19 @@
 // shared/algorithms/final/e/radix-sort.js
-const SOURCE_VERSION = 'radix-sort-c-v1';
+const SOURCE_VERSION = 'radix-sort-c-v2';
 const SOURCE_LINES = [
   { lineId: 'init', text: 'void radix_sort(int arr[], int n) {' },
+  { lineId: 'validate', text: '  for(int i=0;i<n;i++) if(arr[i]<0) return;' },
+  { lineId: 'short-input', text: '  if (n <= 1) return;' },
   { lineId: 'find-max', text: '  int maxv = arr[0];' },
   { lineId: 'scan-max', text: '  for(int i=0;i<n;i++) if(arr[i] > maxv) maxv = arr[i];' },
-  { lineId: 'digit-loop', text: '  for(int exp = 1; maxv / exp > 0; exp *= 10) {' },
+  { lineId: 'digit-loop', text: '  for(long long exp = 1; maxv / exp > 0; exp *= 10) {' },
   { lineId: 'count-init', text: '    int cnt[10] = {0};' },
   { lineId: 'count-digit', text: '    for(int i=0;i<n;i++) cnt[(arr[i]/exp)%10]++;' },
   { lineId: 'prefix', text: '    for(int i=1;i<10;i++) cnt[i] += cnt[i-1];' },
   { lineId: 'fill-tmp', text: '    int* tmp = new int[n]; for(int i=n-1;i>=0;i--)' },
   { lineId: 'place', text: '      tmp[--cnt[(arr[i]/exp)%10]] = arr[i];' },
   { lineId: 'copy', text: '    for(int i=0;i<n;i++) arr[i] = tmp[i];' },
+  { lineId: 'release', text: '    delete[] tmp;' },
   { lineId: 'exp-next', text: '  }' },
   { lineId: 'done', text: '}' },
 ];
@@ -51,12 +54,12 @@ export function generateRadixSortSteps(input) {
   record('init', 'init', `待排序数组 [${arr.join(',')}]，开始LSD基数排序`);
 
   if(!arr.every(x=> Number.isInteger(x) && x >= 0)){
-    record('error','init','基数排序仅支持非负整数输入，终止');
+    record('error','validate','基数排序仅支持非负整数输入，终止');
     return { steps, result:null, sourceVersion:SOURCE_VERSION, sourceLines:SOURCE_LINES };
   }
 
   if (n <= 1) {
-    record('sorted', 'done', `数组长度${n}，无需排序：[${arr.join(',')}]`);
+    record('sorted', 'short-input', `数组长度${n}，无需排序：[${arr.join(',')}]`);
     return { steps, result: [...arr], sourceVersion: SOURCE_VERSION, sourceLines: SOURCE_LINES };
   }
 

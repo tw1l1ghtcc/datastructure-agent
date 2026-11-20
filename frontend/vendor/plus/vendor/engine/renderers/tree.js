@@ -80,7 +80,7 @@ function layoutAsTreeView(data, rect, roles) {
 
 /* ---------------------------------------------------------------- canvas 后端 */
 
-function layoutAsCanvas(data, rect, roles) {
+function layoutAsCanvas(data, rect, roles, props) {
   const prims = [];
   const nodes = new Map();
   const { map, order, roots } = collect(data);
@@ -110,7 +110,7 @@ function layoutAsCanvas(data, rect, roles) {
 
   const leaves = Math.max(1, leafCursor);
   const usableW = rect.w - 76;
-  const gapX = Math.min(70, Math.max(24, usableW / Math.max(1, leaves * 1.15)));
+  const gapX = props.leafGap ?? Math.min(70, Math.max(24, usableW / Math.max(1, leaves * 1.15)));
   const totalW = (leaves - 1) * gapX;
   const x0 = rect.x + rect.w / 2 - totalW / 2;
   const y0 = rect.y + 62;
@@ -144,7 +144,12 @@ function layoutAsCanvas(data, rect, roles) {
   // 新增边（树/森林转换、重建）
   for (const e of data.extraEdges || []) {
     if (!map.has(e.from) || !map.has(e.to)) continue;
-    prims.push(P.line(`x-${e.from}-${e.to}`, px(e.from), py(e.from) + 16, px(e.to), py(e.to) - 16, { stroke: e.color || '#6b3fa0', sw: 2, dash: e.dash || null, arrow: 'end', z: 2 }));
+    const dx = Math.sign(px(e.to) - px(e.from));
+    const from = e.horizontal ? [px(e.from) + dx * (map.get(e.from).boxWidth ?? 32) / 2, py(e.from)]
+      : [px(e.from), py(e.from) + 16];
+    const to = e.horizontal ? [px(e.to) - dx * (map.get(e.to).boxWidth ?? 32) / 2, py(e.to)]
+      : [px(e.to), py(e.to) - 16];
+    prims.push(P.line(`x-${e.from}-${e.to}`, ...from, ...to, { stroke: e.color || '#6b3fa0', sw: 2, dash: e.dash || null, arrow: 'end', z: 2 }));
   }
 
   // 节点
@@ -154,11 +159,15 @@ function layoutAsCanvas(data, rect, roles) {
     const st = stateOf(roles, node.id);
     const s = styleOf(st);
     const isRed = node.color === 'red';
-    const fill = st !== 'idle' ? s.fill : isRed ? '#fdeaea' : '#ffffff';
+    const showColor = st === 'idle' || (props.keepNodeColors && node.color);
+    const fill = showColor ? (isRed ? '#fdeaea' : '#ffffff') : s.fill;
     const stroke = st !== 'idle' ? s.stroke : isRed ? '#c0392b' : node.color === 'black' ? '#172033' : LINK.LinkNodeFrame;
     const r = node.radius ?? 16;
-    prims.push(P.circle(`n-${node.id}`, cx, cy, r, { fill, stroke, sw: borderWidth(st) + (node.color ? 0.6 : 0), opacity: s.opacity, z: 3 }));
-    prims.push(P.text(`nv-${node.id}`, cx, cy, String(node.label ?? node.id), { size: node.fontSize ?? 11, fill: st === 'idle' ? (isRed ? '#8f2020' : UI.text) : s.text, z: 4, opacity: s.opacity }));
+    const paint = { fill, stroke, sw: borderWidth(st) + (node.color ? 0.6 : 0), opacity: s.opacity, z: 3 };
+    prims.push(node.boxWidth
+      ? P.rect(`n-${node.id}`, cx - node.boxWidth / 2, cy - 13, node.boxWidth, 26, { ...paint, r: 5 })
+      : P.circle(`n-${node.id}`, cx, cy, r, paint));
+    prims.push(P.text(`nv-${node.id}`, cx, cy, String(node.label ?? node.id), { size: node.fontSize ?? 11, fill: showColor ? (isRed ? '#8f2020' : UI.text) : s.text, z: 4, opacity: s.opacity }));
     if (node.value != null) prims.push(P.text(`nval-${node.id}`, cx, cy + r + 11, String(node.value), { size: 9, fill: UI.textMuted, z: 4 }));
     if (node.badge) prims.push(P.chip(`nb-${node.id}`, cx, cy - r - 12, node.badge, toneFor(depth)));
     nodes.set(`node:${node.id}`, { x: cx, y: cy });
@@ -183,7 +192,7 @@ function layoutAsCanvas(data, rect, roles) {
 export function layout_(layer, rect, env = {}) {
   const roles = norm(layer.roles);
   const mode = layer.props.layout || 'canvas';
-  return mode === 'treeview' ? layoutAsTreeView(layer.data, rect, roles) : layoutAsCanvas(layer.data, rect, roles);
+  return mode === 'treeview' ? layoutAsTreeView(layer.data, rect, roles) : layoutAsCanvas(layer.data, rect, roles, layer.props);
 }
 
 export { layout_ as layout };

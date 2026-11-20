@@ -1,4 +1,4 @@
-import { createTreeStateTable as table } from './level-order-table.js';
+import { createStateTable as table } from './state-table.js';
 import { framePhases, gVariableText, operationResultText, showList } from '../workbench/g-state.js';
 
 function markCurrent(element, index) {

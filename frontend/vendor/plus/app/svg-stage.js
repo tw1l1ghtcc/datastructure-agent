@@ -103,8 +103,11 @@ export function createStage(host) {
       const id = ids[i];
       if (!cards.has(id)) cards.set(id, makeCard(layer, i));
       const rec = cards.get(id);
+      if (Number.isFinite(layer.props?.canvasWidth)) rec.card.style.width = layer.props.canvasWidth + 'px';
       const hd = rec.card.querySelector('header');
       if (hd) hd.setAttribute('data-size', measure(rec).w + 'x' + rec.height);
+      const title = rec.card.querySelector('header b');
+      if (title) title.textContent = layer.title || id;
       const span = rec.card.querySelector('header span');
       if (span) span.textContent = (RENDERERS[layer.style]?.cls || '') + ' · style ' + layer.style + layerHint(layer);
     });
@@ -284,14 +287,17 @@ export function createStage(host) {
            ① 不能"按当前高度量 → 想变高 → 再量"：栈/堆格高是 (rect.h-90)/cap，会每按一次 +14px（棘轮）
            ② 也不能"画完发现装不下再重画"：重画会把这一帧的 enter/flash 全冲成 move（动画错乱）
            所以：探针 300 → 得 want → 再探针 want 验证装得下 → 定稿 → 一次绘制。 */
-        const probeBottom = contentBottom(probePrims(to, { x: 0, y: 0, w, h: CARD_CANVAS_HEIGHT }), P);
-        let want = Math.min(CARD_CANVAS_HEIGHT, Math.max(CARD_MIN_HEIGHT, Math.ceil(probeBottom + 14)));
-        if (Math.abs(want - CARD_CANVAS_HEIGHT) <= 12) want = CARD_CANVAS_HEIGHT;
-        /* 收短的前提是"这个更矮的高度真的装得下"：装不下就退回满高。
-           这样既不会裁内容，也不会因为反复试探而抖动。 */
-        if (want !== CARD_CANVAS_HEIGHT) {
-          const fitBottom = contentBottom(probePrims(to, { x: 0, y: 0, w, h: want }), P);
-          if (fitBottom + 2 > want) want = CARD_CANVAS_HEIGHT;
+        let want = to.props?.canvasHeight;
+        if (Number.isFinite(want)) {
+          want = Math.max(CARD_MIN_HEIGHT, Math.ceil(want));
+        } else {
+          const probeBottom = contentBottom(probePrims(to, { x: 0, y: 0, w, h: CARD_CANVAS_HEIGHT }), P);
+          want = Math.min(CARD_CANVAS_HEIGHT, Math.max(CARD_MIN_HEIGHT, Math.ceil(probeBottom + 14)));
+          if (Math.abs(want - CARD_CANVAS_HEIGHT) <= 12) want = CARD_CANVAS_HEIGHT;
+          if (want !== CARD_CANVAS_HEIGHT) {
+            const fitBottom = contentBottom(probePrims(to, { x: 0, y: 0, w, h: want }), P);
+            if (fitBottom + 2 > want) want = CARD_CANVAS_HEIGHT;
+          }
         }
         if (Math.abs(want - rec.height) >= 20) { rec.height = want; resize(); }
         const rect = { x: 0, y: 0, w, h: rec.height };

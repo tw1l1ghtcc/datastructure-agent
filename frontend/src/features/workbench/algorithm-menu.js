@@ -1,3 +1,4 @@
+import { eAlgorithmsIn } from './e-algorithms.js';
 import { gAlgorithm, gAlgorithmIds } from './g-algorithms.js';
 import { dAlgorithm, dAlgorithmIds } from './d-algorithms.js';
 import { cAlgorithm, cAlgorithmIds } from './c-algorithms.js';
@@ -5,6 +6,8 @@ import { graphAlgorithm, graphAlgorithmIds } from './graph-algorithms.js';
 import { plusMenuChapters } from '../visualization/ext/plus-bridge.js';
 
 const chapters = [
+  ['第二章 · 线性表', eAlgorithmsIn('list')],
+  ['第三章 · 栈、队列与数组', eAlgorithmsIn('matrix')],
   ['第五章 · 树与二叉树', gAlgorithmIds.filter(id => id !== 'binary-search-tree').map(id => [id, gAlgorithm(id).title])],
   ['第六章 · 图', graphAlgorithmIds.map(id => [id, graphAlgorithm(id).title])],
   ['并查集', [['union-find', '并查集']]],
@@ -18,6 +21,7 @@ const chapters = [
     ['quick-sort', '快速排序'],
     ['heap-sort', '堆排序'],
     ['merge-sort', '归并排序'],
+    ...eAlgorithmsIn('sort'),
     ...cAlgorithmIds.filter(id => !cAlgorithm(id).tree).map(id => [id, cAlgorithm(id).title]),
   ]],
   ['自定义', [['custom-array', '自定义代码']]]
@@ -37,6 +41,14 @@ export function createAlgorithmMenu(root, onSelect) {
   let hoverTimer;
 
   function cancelHover() { clearTimeout(hoverTimer); }
+  function alignSubmenu(submenu) {
+    submenu.style.removeProperty('--submenu-shift');
+    if (window.matchMedia('(max-width: 680px)').matches) return;
+    const { top, height } = submenu.getBoundingClientRect();
+    const alignedTop = Math.max(8, Math.min(top, window.innerHeight - height - 8));
+    submenu.style.setProperty('--submenu-shift', (alignedTop - top) + 'px');
+  }
+
   function showChapter(chapter) {
     cancelHover();
     if (activeChapter) {
@@ -47,6 +59,7 @@ export function createAlgorithmMenu(root, onSelect) {
     if (chapter) {
       chapter.button.setAttribute('aria-expanded', 'true');
       chapter.submenu.hidden = false;
+      alignSubmenu(chapter.submenu);
     }
   }
   function setOpen(open) {
@@ -127,6 +140,9 @@ export function createAlgorithmMenu(root, onSelect) {
     list.querySelector('button').focus();
   }, options);
   root.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') close(); }, options);
+  window.addEventListener('resize', () => {
+    if (activeChapter) alignSubmenu(activeChapter.submenu);
+  }, options);
   root.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || list.hidden) return;
     event.preventDefault();

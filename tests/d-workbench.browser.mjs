@@ -10,6 +10,48 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   env: { ...process.env, PORT: '0', HOST: '127.0.0.1', AGENT_MOCK: 'true', RATE_LIMIT: 'false' },
   windowsHide: true
 });
+
+const primitive = (svg, key) => svg.locator('[data-avc-key="' + key + '"]');
+
+async function checkFrame(animation, step) {
+  const v = step.variables;
+  if (Array.isArray(v.nodes)) {
+    const svg = animation.locator('[data-avc-svg="d-tree"]');
+    assert.equal(await svg.locator('[data-avc-key^="n-k"]').count(), v.nodes.length);
+    for (const node of v.nodes) {
+      const id = 'k' + node.key;
+      assert.equal(await primitive(svg, 'nv-' + id).textContent(), String(node.key));
+      for (const [child, side] of [[node.left, 'L'], [node.right, 'R']]) {
+        if (child == null) continue;
+        assert.equal(await primitive(svg, 'e-' + id + '-k' + child).count(), 1);
+        assert.equal(await primitive(svg, 'et-k' + child).textContent(), side);
+      }
+      if (node.color) {
+        assert.equal(await primitive(svg, 'nval-' + id).textContent(), node.color === 'R' ? '红' : '黑');
+        assert.equal(await primitive(svg, 'n-' + id).locator('circle').getAttribute('fill'), node.color === 'R' ? '#fdeaea' : '#ffffff');
+      } else {
+        assert.equal(await primitive(svg, 'nval-' + id).textContent(), 'h=' + node.height + ' · BF=' + node.bf);
+      }
+    }
+  } else if (v.buckets) {
+    const svg = animation.locator('[data-avc-svg="d-chain"]');
+    if (v.bucketIndex == null) {
+      assert.equal(await svg.count(), 0);
+      return;
+    }
+    assert.equal(await svg.getAttribute('aria-label'), '桶 ' + v.bucketIndex + ' 的链');
+    for (const [index, key] of v.chain.entries()) {
+      assert.equal(await primitive(svg, 'nv-pos' + index).textContent(), String(key));
+      if (index > 0) assert.equal(await primitive(svg, 'link-pos' + (index - 1) + '-pos' + index).count(), 1);
+    }
+    if (step.event === 'found') assert.equal(await primitive(svg, 'nfill-pos' + v.position).locator('rect').getAttribute('fill'), '#e9f8ef');
+  } else if (v.slot != null) {
+    const svg = animation.locator('[data-avc-svg="d-slots"]');
+    assert.equal(await primitive(svg, 'gv-0,' + v.slot).textContent(), v.used[v.slot] ? String(v.table[v.slot]) : '空');
+    if (step.event === 'found') assert.equal(await primitive(svg, 'g-0,' + v.slot).locator('rect').getAttribute('fill'), '#e9f8ef');
+  }
+}
+
 let browser;
 try {
   const base = await new Promise((resolve, reject) => {
@@ -43,10 +85,15 @@ try {
     await page.locator('#c-edit').waitFor();
     const view=page.locator('.d-state-tables');
     await view.waitFor();
+    const animation = page.locator('[data-viz-engine="plus-d"]');
+    await animation.waitFor();
+    await checkFrame(animation, run.steps[0]);
     for(let step=1;step<run.steps.length;step++){
       await page.click('#nextBtn');
       assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'),run.steps[step].lineId,id);
       assert.doesNotMatch(await view.innerText(),/undefined|NaN/);
+      assert.equal(await page.locator('.bsviz-caption').textContent(), run.steps[step].description);
+      await checkFrame(animation, run.steps[step]);
     }
     assert.match(await view.innerText(),/查询结果/);
     assert.equal(await view.locator('[data-found="true"]').count(),1,id);
@@ -54,6 +101,10 @@ try {
       const slots=await view.locator('table').first().locator('tbody tr').evaluateAll(rows=>rows.map(row=>row.cells[1].textContent));
       assert.deepEqual(slots,run.result.map(value=>value===null?'空':String(value)));
     }
+    await page.click('#prevBtn');
+    await checkFrame(animation, run.steps.at(-2));
+    await page.locator('[data-viz-replay]').click();
+    await checkFrame(animation, run.steps.at(-2));
     await page.click('#resetBtn');await page.click('#nextBtn');
     const answer=await page.request.post(base+'/api/agent/explain',{
       data:{runId:run.runId,stepIndex:1,question:'解释这一步',hintLevel:2}
@@ -83,6 +134,59 @@ try {
     const response=await page.request.post(base+'/api/algorithms/'+id+'/runs',{data:input});
     assert.equal(response.status(),200);check(await response.json());
   }
+  await page.setViewportSize({ width: 390, height: 840 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await selectWorkbenchAlgorithm(page, 'hash-linear-probing');
+  await page.fill('#c-data', '0, 1023');
+  await page.fill('#c-param', '1024');
+  await page.fill('#d-target', '1023');
+  let pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/hash-linear-probing/runs'));
+  await page.click('#startBtn');
+  const hash = await (await pending).json();
+  assert.equal(hash.steps.at(-1).variables.slot, 1023);
+  await page.click('[data-t="last"]');
+  const slots = page.locator('[data-avc-svg="d-slots"]');
+  assert.equal(await primitive(slots, 'cht-6').textContent(), '1023');
+  assert.equal(await primitive(slots, 'gv-0,6').textContent(), '1023');
+  assert.match(await slots.getAttribute('aria-label'), /1017–1023/);
+  assert.equal(await page.locator('.d-state-tables table').first().locator('tbody tr').count(), 1024);
+
+  await selectWorkbenchAlgorithm(page, 'hash-chaining');
+  await page.fill('#c-data', '0, 1, 2, 3, 4, 5, 6');
+  await page.fill('#c-param', '1');
+  await page.fill('#d-target', '6');
+  pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/hash-chaining/runs'));
+  await page.click('#startBtn');
+  assert.equal((await (await pending).json()).steps.at(-1).variables.position, 6);
+  await page.click('[data-t="last"]');
+  const chain = page.locator('[data-avc-svg="d-chain"]');
+  assert.match(await chain.getAttribute('aria-label'), /3–7 \/ 7/);
+  assert.equal(await primitive(chain, 'nv-pos6').textContent(), '6');
+  assert.equal(await primitive(chain, 'link-pos5-pos6').count(), 1);
+  assert.match(await page.locator('.d-state-tables').innerText(), /0 → 1 → 2 → 3 → 4 → 5 → 6/);
+
+  await selectWorkbenchAlgorithm(page, 'avl-tree');
+  const keys = Array.from({ length: 64 }, (_, index) => Number.MAX_SAFE_INTEGER - 63 + index);
+  await page.fill('#c-data', keys.join(', '));
+  await page.click('#c-next');
+  await page.fill('#c-queries', String(keys.at(-1)));
+  pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/avl-tree/runs'));
+  await page.click('#startBtn');
+  const wideTree = await (await pending).json();
+  assert.equal(wideTree.steps.at(-1).variables.searchResult, keys.at(-1));
+  await page.click('[data-t="last"]');
+  const tree = page.locator('[data-avc-svg="d-tree"]');
+  await checkFrame(page.locator('[data-viz-engine="plus-d"]'), wideTree.steps.at(-1));
+  assert.ok(await tree.evaluate(svg => {
+    const bounds = svg.querySelector('.avc-layer').getBBox();
+    const view = svg.viewBox.baseVal;
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= view.width && bounds.y + bounds.height <= view.height;
+  }), 'the full tree fits in its SVG');
+  assert.ok(await page.locator('[data-viz-body]').evaluate(body => {
+    body.scrollLeft = body.scrollWidth;
+    return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
+  }), 'the tree scrolls inside the workbench at mobile width');
+
   const invalid=await page.request.post(base+'/api/algorithms/hash-double-hashing/runs',{data:{keys:[1],capacity:4}});
   assert.equal(invalid.status(),400);
   await selectWorkbenchAlgorithm(page,'binary-search');await page.click('#fillDemo');await page.click('#startBtn');

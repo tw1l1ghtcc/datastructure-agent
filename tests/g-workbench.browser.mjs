@@ -36,6 +36,30 @@ async function startRun(page, id, expectedStatus = 200) {
   return run;
 }
 
+const primitiveKey = value => 'n' + Array.from(String(value), char => char.codePointAt(0).toString(16)).join('_');
+const layer = (page, id) => page.locator('[data-viz-engine="plus-g"] [data-avc-svg="' + id + '"]');
+
+async function assertTree(page, name, nodes, { huffman = false, threaded = false } = {}) {
+  const svg = layer(page, name);
+  assert.equal(await svg.locator('[data-avc-key^="n-n"]').count(), nodes.length);
+  const ids = new Set(nodes.map(node => huffman ? node.index : node.id));
+  let edgeCount = 0;
+  let threadCount = 0;
+  for (const node of nodes) {
+    const from = primitiveKey(huffman ? node.index : node.id);
+    for (const [child, isThread] of node.children ? node.children.map(id => [id, false])
+      : [[node.left, node.leftThread], [node.right, node.rightThread]]) {
+      if (!ids.has(child)) continue;
+      const prefix = isThread ? 'th' : 'e';
+      assert.equal(await svg.locator('[data-avc-key="' + prefix + '-' + from + '-' + primitiveKey(child) + '"]').count(), 1);
+      if (isThread) threadCount++;
+      else edgeCount++;
+    }
+  }
+  assert.equal(await svg.locator('[data-avc-key^="e-n"]').count(), edgeCount);
+  if (threaded) assert.equal(await svg.locator('[data-avc-key^="th-n"]').count(), threadCount);
+}
+
 async function assertStep(page, run, index) {
   const step = run.steps[index];
   await page.waitForFunction(({ index, lineId }) =>
@@ -44,6 +68,21 @@ async function assertStep(page, run, index) {
   { index, lineId: step.lineId });
   assert.equal(await page.locator('#step-description').textContent(), step.description);
   assert.equal(await page.locator('[data-explain-host] .bsviz-caption').textContent(), step.description);
+  const visible = page.locator('[data-viz-engine="plus-g"] .avc-svg');
+  assert.ok(await visible.count(), step.algorithm);
+  assert.doesNotMatch((await visible.allTextContents()).join(' '), /渲染失败|undefined|NaN/);
+  const v = step.variables;
+  if (step.algorithm === 'tree-forest-conversion') {
+    await assertTree(page, 'g-forest', v.forestNodes);
+    await assertTree(page, 'g-binary', v.binaryNodes);
+  } else if (step.algorithm === 'huffman-coding') {
+    await assertTree(page, 'g-huffman', v.nodes, { huffman: true });
+    assert.deepEqual(await layer(page, 'g-candidates').locator('[data-avc-key^="gv-"]').allTextContents(),
+      v.candidates.map(index => String(v.nodes[index].weight)));
+  } else {
+    await assertTree(page, 'g-tree', v.nodes, { threaded: step.algorithm === 'threaded-binary-tree' });
+    if (v.queue) assert.deepEqual(await layer(page, 'g-queue').locator('[data-avc-key^="gv-"]').allTextContents(), v.queue.map(entry => entry.id));
+  }
 }
 
 let browser;
@@ -148,6 +187,19 @@ try {
   assert.equal(reply.runId, worst.runId);
   assert.equal(reply.stepIndex, missing.stepIndex);
   assert.deepEqual(reply.stepRefs[0].variables, missing.variables);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.locator('[data-viz-replay]').click();
+  const svg = layer(page, 'g-tree');
+  assert.ok(await svg.evaluate(element => {
+    const box = element.querySelector('.avc-layer').getBBox();
+    const { width, height } = element.viewBox.baseVal;
+    return box.x >= -1 && box.y >= -1 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1;
+  }), '64-node deep tree fits its canvas');
+  assert.ok(await tableViewport.evaluate(element => {
+    element.scrollLeft = element.scrollWidth;
+    return element.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
+  }), 'deep tree scrolls inside the workbench at mobile width');
   assert.deepEqual(errors, []);
   console.log('G workbench acceptance passed. Large BST replay: ' + transportBytes + ' bytes, ' + elapsedMs + ' ms to first rendered step.');
 } finally {

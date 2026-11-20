@@ -455,6 +455,35 @@
 .bsviz-anim-range { animation: bsviz-range-flash 320ms ease-out both; }
 
 /* prototype01 一维数组视图 */
+.a-sort-view { display: grid; gap: 6px; justify-items: center; }
+.a-sort-detail { min-height: 1.4em; font-size: 12px; color: #65728a; }
+.a-sort-auxiliary.plus-viz { min-width: 240px; min-height: 0; height: auto; overflow: visible; }
+.a-sort-auxiliary[data-sort-layer="heap"] { min-height: 315px; }
+.a-sort-auxiliary[data-sort-layer="temp"] { min-height: 165px; }
+.a-sort-auxiliary .canvas-card header span { display: none; }
+
+.b-animation { display: grid; gap: 8px; width: 440px; }
+.b-animation-wide { width: 590px; }
+.b-animation-stage.plus-viz { min-height: 334px; height: auto; overflow: visible; }
+.b-animation-stage .canvas-card header span { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .b-animation-stage :is(circle, line, polyline) { transition: fill 180ms ease, stroke 180ms ease, stroke-width 180ms ease; }
+}
+.b-animation-data { max-height: 202px; overflow: auto; }
+.b-animation-matrix { max-height: 236px; }
+.b-animation-data .uf-table { width: 100%; min-width: 0; }
+.b-animation-data caption { text-align: left; padding: 5px 0; font-weight: 600; }
+.b-animation-data :is(th, td) { padding: 4px 6px; overflow-wrap: anywhere; }
+.b-animation-data td[data-active="via"] { background: #e8e9fb; }
+.b-animation-data td[data-active="target"] { background: #ffedc7; font-weight: 650; }
+.c-animation { display: grid; gap: 10px; justify-items: start; }
+.c-animation-stage.plus-viz { min-height: 0; height: auto; overflow: visible; }
+.c-animation-stage .canvas-card header span { display: none; }
+.c-animation .c-state-tables { max-width: 580px; }
+.c-animation .c-state-tables :is(th, td) { padding: 5px 8px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+  .c-animation-stage :is(rect, line, polyline) { transition: fill 180ms ease, stroke 180ms ease; }
+}
 .prototype-array { display: block; flex: none; overflow: visible; }
 .prototype-array text { fill: var(--viz-index-text); font-size: 10px; text-anchor: middle; }
 .prototype-array-axis { fill: none; stroke: var(--viz-index-text); }

@@ -1,17 +1,17 @@
 # 当前项目状态
 
-更新：2026-11-18。集成基线为 main 的 `31a3839`，包含已合并的 [PR #70](https://github.com/tw1l1ghtcc/datastructure-agent/pull/70)。本轮 54 项中已有 38 项算法实现合并；该基线接入本轮 29 项。G 包集成分支补齐其余 9 项，加上原有二分和冒泡共 40 项内置算法，自定义代码另计。具体交付与证据见[最终进度](../team/final/progress.md)，历史见[第一次任务归档](../team/phase-1/README.md)。
+更新：2026-11-20。工作台动画汇总基于 main 的 `e945ab3`（[PR #66](https://github.com/tw1l1ghtcc/datastructure-agent/pull/66)）。本轮 54 项中有 47 项算法实现已合入该基线。工作台接入这 47 项及原有二分查找、冒泡排序，共 49 项内置算法。交付分工见[最终进度](../team/final/progress.md)，历史见[第一次任务归档](../team/phase-1/README.md)。
 
 ## 已接入的程序
 
 | 部分 | 当前行为 | 实现与检查入口 |
 |---|---|---|
-| 内置算法 | 二分、顺序、分块查找；冒泡及A包7种比较排序；BFS、DFS、Prim、Kruskal、Dijkstra、Floyd、拓扑排序。另有并查集、C包五项、AVL/红黑树、四种哈希和 G 包十项使用状态表；共 40 项由服务端生成步骤，共用播放、查询和源码高亮 | [最终进度](../team/final/progress.md)、[A包验收](../team/final/a-validation.md) |
+| 内置算法 | A、B、C、D、E、G 包及原有二分查找和冒泡排序。49 项由服务端生成步骤，共用播放、查询和源码高亮 | [最终进度](../team/final/progress.md)、[A包验收](../team/final/a-validation.md) |
 | 五页导航 | 课程目录、算法工作台、学习笔记、过程练习、错题与记录；支持地址直达及浏览器历史导航 | [工作台说明](../../frontend/src/features/workbench/README.md) |
 | 课程目录与笔记 | 八章、71 个目录入口。二分查找和冒泡排序的笔记可打开并选中对应算法，默认启动进入工作台 | [PR #38](https://github.com/tw1l1ghtcc/datastructure-agent/pull/38)、[PR #42](https://github.com/tw1l1ghtcc/datastructure-agent/pull/42) |
-| 动画与代码 | 默认 SVG 柱形数组视图，源码和白底动画并排，本步解释背景透明。二分查找可用 `?viz=legacy` 回到旧版；时间轴、回退、平移缩放和全屏共用 | [动画说明](../../frontend/src/features/visualization/README.md) |
+| 动画与代码 | A 包主图使用 Plus 帧适配器，堆图和归并临时区直接用 Plus。B、C、E、G 及 D 包平衡树和哈希使用 Plus SVG 舞台并保留状态表。二分、顺序和分块查找沿用数组视图。 | [动画说明](../../frontend/src/features/visualization/README.md) |
 | 自定义代码 | Windows x64 本机使用随仓库提供的 Open Watcom 编译受限 C/C++ 数组函数，按实际数组写入回放并高亮源码 | [本地使用](../../README.md#自定义代码)、[API 契约](api-contract.md) |
-| 步骤聊天 | 40 项内置算法接入当前步骤问答，携带当前/上一步、源码及最近最多10轮；排序使用真实排序变量。默认DeepSeek Flash，显式Mock优先；新排序真实模型效果尚未专项评估 | [Agent说明](../../backend/src/agent/README.md)、[A包验收](../team/final/a-validation.md) |
+| 步骤聊天 | 49 项内置算法接入当前步骤问答，携带当前/上一步、源码及最近最多10轮；排序使用真实排序变量。默认DeepSeek Flash，显式Mock优先；新排序真实模型效果尚未专项评估 | [Agent说明](../../backend/src/agent/README.md)、[A包验收](../team/final/a-validation.md) |
 | 聊天窗口 | 接近整屏高度；点击外部、缩小键或Escape收起，保留草稿/历史/等待中的回答；未运行或等待回复时也能写草稿，发送需有效运行且无进行中的请求 | PR #29/#30；对话球回弹PR #31已撤回并关闭 |
 | 独立知识接口 | 保留自编二分查找知识卡的目录和查询；网页「学习笔记」读取章节笔记 | [知识接口](../../backend/src/knowledge/README.md) |
 | 练习与记录 | 两种算法各 10 道固定过程题，支持程序判分、逐级提示和错题重练。最近 200 次作答保存在当前浏览器 | [练习说明](../../frontend/src/features/exercises/README.md)、[记录说明](../../frontend/src/features/records/README.md) |
@@ -28,8 +28,8 @@
 
 - 独立全流程复核、真实模型对比及可复核用量/输出证据仍需完善；现有Mock和本地桩结果不代替这些工作。
 - 真实访谈、学生试用与匿名汇总以可核验证据为准。仓库已合并展示材料、两份设计说明书，课程平台提交情况另行确认。
-- G 包集成分支已接入全部 38 项已交付算法，另有 16 项待交付。图、树、哈希等正式动画视图待联调。自定义代码当前限本机整数数组函数。
-- PR #66的整程序引擎和新增示例仍未合并；不能计入主分支完成数。本地集成分支的额外入口也不等同于已发布功能。
+- F 包七项待完成算法实现与工作台接入。
+- 示例库与整程序入口已随 PR #66 合入。示例库独立于普通工作台的 49 项内置算法。
 
 ## 文档和检查的适用范围
 

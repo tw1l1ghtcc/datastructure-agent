@@ -1,10 +1,8 @@
 export function createUnionFindTable(input) {
   const element = document.createElement('div');
-  const note = document.createElement('p');
-  note.textContent = '树形动画待接入 · 父节点表随步骤更新';
   const table = document.createElement('table');
   table.className = 'uf-table';
-  table.setAttribute('aria-label', '并查集父节点表');
+  table.createCaption().textContent = '并查集父节点表';
   const head = table.createTHead().insertRow();
   for (const text of ['元素', '父节点', '秩']) {
     const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = text; head.append(cell);
@@ -16,7 +14,7 @@ export function createUnionFindTable(input) {
     for (const value of [name, name, '0']) row.insertCell().textContent = value;
     rows.set(name, row);
   }
-  element.append(note, table);
+  element.append(table);
   return {
     element,
     showStep(step, previous) {

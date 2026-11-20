@@ -29,8 +29,9 @@ function layersFor(step) {
     const size = activeHeapSize(step);
     return [heapLayer({
       id: 'a-heap', title: '有效堆',
-      name: step.event === 'init' && size ? '待建堆 · ' + size + ' 个结点' : size + ' 个结点',
+      name: (step.event === 'init' && size ? '待建堆' : '有效堆') + ' · ' + size + ' 个结点',
       tree: step.array.slice(0, size),
+      props: { fitTree: true },
       roles: { focus1: aSortMarks(step).focus.filter(index => index < size) },
     })];
   }
@@ -51,8 +52,11 @@ function fitHeapLabels(auxiliary) {
     text.removeAttribute('textLength');
     text.removeAttribute('lengthAdjust');
     node.querySelector('title')?.remove();
-    if (value.length <= 4) continue;
-    text.setAttribute('textLength', '24');
+    const index = node.dataset.avcKey.slice(4);
+    const circle = auxiliary.querySelector('[data-avc-key="tn-' + index + '"] circle');
+    const width = Math.max(3, Math.floor(2 * Number(circle.getAttribute('r')) - 4));
+    if (text.getComputedTextLength() <= width) continue;
+    text.setAttribute('textLength', String(width));
     text.setAttribute('lengthAdjust', 'spacingAndGlyphs');
     const title = document.createElementNS(SVG_NS, 'title');
     title.textContent = value;
@@ -61,31 +65,60 @@ function fitHeapLabels(auxiliary) {
 }
 
 export function createASortVisualization(host, run, explainContainer) {
+  const heap = run.algorithm === 'heap-sort';
   const root = document.createElement('div');
   root.className = 'a-sort-view';
+  root.classList.toggle('a-heap-view', heap);
   root.dataset.vizEngine = 'plus-sort';
   host.append(root);
-  const view = createVisualization(root, { run, explainContainer, frameBuilder: buildASortFrame });
+  const chart = heap ? document.createElement('div') : root;
+  if (heap) {
+    chart.className = 'a-heap-chart';
+    root.append(chart);
+  }
+  const view = createVisualization(chart, {
+    run, explainContainer,
+    frameBuilder: heap ? (step, options) => buildASortFrame(step, {
+      ...options,
+      width: Math.max(84, chart.clientWidth),
+      height: Math.max(112, chart.clientHeight),
+    }) : buildASortFrame,
+  });
 
-  const detail = document.createElement('p');
-  detail.className = 'a-sort-detail';
-  root.prepend(detail);
-  const auxiliary = run.algorithm === 'heap-sort' || run.algorithm === 'merge-sort' ? document.createElement('div') : null;
+  const detail = heap ? null : document.createElement('p');
+  if (detail) {
+    detail.className = 'a-sort-detail';
+    root.prepend(detail);
+  }
+  const auxiliary = heap || run.algorithm === 'merge-sort' ? document.createElement('div') : null;
   let stage;
   if (auxiliary) {
     auxiliary.className = 'plus-viz a-sort-auxiliary';
-    auxiliary.dataset.sortLayer = run.algorithm === 'heap-sort' ? 'heap' : 'temp';
-    root.append(auxiliary);
-    stage = createStage(auxiliary);
+    auxiliary.dataset.sortLayer = heap ? 'heap' : 'temp';
+    if (heap) root.prepend(auxiliary);
+    else root.append(auxiliary);
+    stage = createStage(auxiliary, { fillViewport: heap });
   }
 
-  function renderExtras(step) {
-    detail.textContent = aSortDetail(step);
+  function renderExtras(step, options) {
+    if (detail) detail.textContent = aSortDetail(step);
     if (!stage) return;
-    stage.render(layersFor(step));
-    if (run.algorithm === 'heap-sort') fitHeapLabels(auxiliary);
+    stage.render(layersFor(step), options);
+    if (heap) {
+      const tree = auxiliary.querySelector('[data-layer="a-heap"]');
+      tree?.setAttribute('role', 'img');
+      tree?.setAttribute('aria-label', '有效堆树');
+      fitHeapLabels(auxiliary);
+    }
   }
   renderExtras(view.getStep());
+  const observer = heap ? new ResizeObserver(() => {
+    const step = view.getStep();
+    if (!step) return;
+    view.showStep(step);
+    renderExtras(step, { animate: false });
+  }) : null;
+  observer?.observe(root);
 
   return {
     showStep(step) {
@@ -99,6 +132,7 @@ export function createASortVisualization(host, run, explainContainer) {
       renderExtras(view.getStep());
     },
     destroy() {
+      observer?.disconnect();
       stage?.clear();
       view.destroy();
       root.remove();

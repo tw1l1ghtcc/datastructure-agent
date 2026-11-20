@@ -58,7 +58,7 @@
 @media(max-width:760px){#visualization-panel{height:580px}.vizwin{resize:none}.vizwin .win-sub{display:initial}}
 @media(max-width:540px){#visualization-panel{height:560px}.vizwin .win-sub{display:none}.vizwin .win-action{padding:3px 5px}.vizwin .viewport{--step-explanation-inset:14px}.vizwin .viewport-head{margin-inline:12px;gap:4px}.vizwin .viewport-head .bl-btn{font-size:9px;padding:3px 5px}.vizwin .timeline{padding:10px 8px;gap:12px}.vizwin .tl-btn{width:26px;height:30px}.vizwin .viewport-hint{font-size:9px;left:12px}}
 #visualization-panel:has(.vizwin[data-graph-view="split"]) { height: 770px; }
-.vizwin:is([data-graph-view="canvas"], [data-graph-view="split"]) .viewport-scene {
+.vizwin:is([data-graph-view="canvas"], [data-graph-view="split"], [data-heap-view]) .viewport-scene {
   width: 100%;
   height: 100%;
   padding: 0;

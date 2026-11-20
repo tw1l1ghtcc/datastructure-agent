@@ -97,12 +97,13 @@ export function buildArrayFrame(input, opts = {}) {
   if (!st || !st.array || !st.array.length) return null;
 
   const count = st.array.length;
-  const spacing = Math.max(26, Math.min(56, Math.floor(640 / count)));
   const padLeft = 34;
+  const spacing = opts.width ? Math.max(5, (opts.width - padLeft - 24) / count)
+    : Math.max(26, Math.min(56, Math.floor(640 / count)));
   const width = opts.width || (padLeft + spacing * count + 18);
   const height = opts.height || 202;
   const top = 64;
-  const bottom = 158;
+  const bottom = height - 44;
 
   const min = Math.min(0, ...st.array);
   const max = Math.max(0, ...st.array);
@@ -119,7 +120,7 @@ export function buildArrayFrame(input, opts = {}) {
   chart.appendChild(svgEl(doc, 'text', { x: xEnd - 4, y: zero - 9 }, 'X'));
   chart.appendChild(svgEl(doc, 'text', { x: padLeft - 10, y: top - 2 }, 'Y'));
 
-  const barWidth = spacing * 0.6;
+  const barWidth = Math.min(80, spacing * 0.6);
   const midIndex = st.mid;
   const foundIndex = st.event === 'found' ? st.result : null;
   /* 自定义代码的"这一步动的格子"（引擎给的 focus1）。宿主没有 is-focus，用已有的
@@ -146,11 +147,13 @@ export function buildArrayFrame(input, opts = {}) {
        没有 labels 才退回数值文本（宿主 54 个示例走的就是这条，行为不变）。 */
     const label = st.labels && st.labels[index] != null ? String(st.labels[index]) : String(value);
     const valueLabel = svgEl(doc, 'text', { class: 'prototype-array-value', x, y: value < 0 ? y + 13 : y - 6 }, label);
-    if (label.length > Math.floor((spacing - 4) / 6)) {
-      valueLabel.setAttribute('textLength', String(spacing - 4));
-      valueLabel.setAttribute('lengthAdjust', 'spacingAndGlyphs');
-    }
+    const labelWidth = spacing - 4;
     const mark = svgEl(doc, 'g', {});
+    if (label.length > Math.floor(labelWidth / 6)) {
+      valueLabel.setAttribute('textLength', String(labelWidth));
+      valueLabel.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      if (opts.width) mark.appendChild(svgEl(doc, 'title', {}, label));
+    }
     mark.appendChild(svgEl(doc, 'rect', {
       x: x - barWidth / 2,
       y: value === 0 ? zero - 2 : Math.min(y, zero),
@@ -161,7 +164,7 @@ export function buildArrayFrame(input, opts = {}) {
     mark.appendChild(valueLabel);
     cell.appendChild(mark);
     cell.appendChild(svgEl(doc, 'path', { class: 'prototype-array-axis', d: `M ${x} ${zero} v 4` }));
-    cell.appendChild(svgEl(doc, 'text', { x, y: 187 }, index));
+    cell.appendChild(svgEl(doc, 'text', { x, y: height - 15 }, index));
     chart.appendChild(cell);
 
     /* 自定义代码：值变了的格子淡入一下（宿主在 prototype-array.js 里对"写入格"用的就是这招：
@@ -211,8 +214,9 @@ export function buildArrayFrame(input, opts = {}) {
     if (!Number.isInteger(idx) || idx < 0 || idx >= st.array.length) continue;
     const key = String(p.id || p.label || 'ptr');
     if (pointers.has(key)) continue;
-    const row = stacked.get(idx) || 0;
-    stacked.set(idx, row + 1);
+    const rowKey = opts.width && spacing < 32 ? 'nearby' : idx;
+    const row = stacked.get(rowKey) || 0;
+    stacked.set(rowKey, row + 1);
     const y = freeRows[Math.min(row, freeRows.length - 1)];
     const text = String(p.label == null ? key : p.label);
     const w = Math.max(16, 10 + text.length * 7);

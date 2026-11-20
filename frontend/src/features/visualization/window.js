@@ -115,7 +115,8 @@ export function createVizWindow(host, {
   }
   const custom = algorithm === 'custom-array';
   const graph = graphAlgorithm(algorithm);
-  const fullGraphCanvas = Boolean(graph || unionFind);
+  const heapSort = algorithm === 'heap-sort';
+  const fullCanvas = Boolean(graph || unionFind || heapSort);
   const tableLabel = graphTableLabel(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
@@ -166,13 +167,17 @@ export function createVizWindow(host, {
       'selection-sort': '简单选择排序', 'quick-sort': '快速排序', 'heap-sort': '堆排序', 'merge-sort': '归并排序'
     };
     const sortName = sortNames[algorithm] || '排序';
-    const sortView = algorithm === 'heap-sort' ? '数组与堆树' : algorithm === 'merge-sort' ? '数组与临时区' : '数组视图';
+    const sortView = heapSort ? '堆树与柱状图' : algorithm === 'merge-sort' ? '数组与临时区' : '数组视图';
     root.querySelector('.win-sub').textContent = sortName + ' · ' + sortView;
     root.querySelector('.vh-title').textContent = sortView;
     root.querySelector('.vh-sub').textContent = `${sortName} · 升序`;
     const legend = root.querySelector('.viewport-legend');
     legend.setAttribute('aria-label', '排序图例');
     legend.innerHTML = '<span><b class="legend-mid">绿</b> 已就位/最终位置</span><span><b class="legend-right">橙</b> 比较/操作</span>';
+    if (heapSort) {
+      root.dataset.heapView = 'true';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧堆树，右侧排序柱状图');
+    }
   }
   
   if (custom) {
@@ -239,7 +244,7 @@ export function createVizWindow(host, {
        不能被视口的自动取景缩放：否则上一轮的 scale 会被继承/反复相乘，
        卡越走越小、最后看不见。这里对结构族 plus 运行只把视图复位成 1:1。
        数组族 plus 仍然走本项目的数组链路，照旧自动取景。 */
-    if (fullGraphCanvas || (currentRun?.plus && currentRun.structure !== 'array')) {
+    if (fullCanvas || (currentRun?.plus && currentRun.structure !== 'array')) {
       view.scale = 1; view.x = 0; view.y = 0;
       applyView();
       warnIfCanvasTiny();
@@ -513,7 +518,7 @@ export function createVizWindow(host, {
   }
   setStep(run?.steps[0] ?? null, {stepIndex:run ? 0 : -1,total:run?.steps.length ?? 0,canPrev:false,canNext:Boolean(run && run.steps.length > 1),playing:false});
 
-  const observer = new ResizeObserver(fullGraphCanvas ? warnIfCanvasTiny : queueFit); observer.observe(body);
+  const observer = new ResizeObserver(fullCanvas ? warnIfCanvasTiny : queueFit); observer.observe(body);
   const rulerObserver = new ResizeObserver(updateLabelDensity); rulerObserver.observe(ruler);
   const bar = $('.win-bar'); let drag = null;
   bar.addEventListener('pointerdown', event => {

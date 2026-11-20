@@ -13,9 +13,10 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 const cases = [
   { id: 'bracket-matching', result: true, field: 'matched', conclusion: /括号全部匹配/ },
   { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], conclusion: /转换完成/ },
-  { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/, conclusion: /表达式结果为 -8/ },
+  { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', conclusion: /表达式结果为 -8/ },
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
   { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
+  { id: 'expression-evaluation', mode: 'infix', result: -8, field: 'value', conclusion: /表达式结果为 -8/ },
   { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/, conclusion: /根节点结果为 25/ },
   { id: 'critical-path', result: 5, field: 'duration', caption: /关键路径/, conclusion: /总工期为 5/ },
 ];
@@ -23,6 +24,7 @@ const cases = [
 const layer = (page, name) => page.locator('[data-viz-engine="plus-f"] [data-avc-svg="f-' + name + '"]');
 const cells = (page, name) => layer(page, name).locator('[data-avc-key^="gv-"]').allTextContents();
 const indices = (page, name) => layer(page, name).locator('[data-avc-key^="idx-"]').allTextContents();
+const sequenceHeadings = page => page.locator('.f-sequence-row:visible h3').allTextContents();
 const display = value => String(value ?? '—');
 
 async function assertScrolledTo(cell) {
@@ -44,7 +46,7 @@ async function assertAnimation(page, run, step) {
     assert.deepEqual(await cells(page, 'brackets'), v.stack.map(item => item.char));
     assert.deepEqual(await indices(page, 'brackets'), v.stack.map(item => String(item.i)));
   }
-  if (v.operators) {
+  if (v.operators && step.algorithm !== 'expression-evaluation') {
     const full = step.algorithm === 'infix-to-postfix';
     const operators = full ? v.operators : v.operators.slice(-10);
     const output = full ? v.output : v.output.slice(-10);
@@ -56,7 +58,20 @@ async function assertAnimation(page, run, step) {
     }
   }
   if (step.algorithm === 'expression-evaluation') {
-    assert.deepEqual(await cells(page, 'operands'), v.stack.slice(-10).map(display));
+    const boundary = run.steps.findIndex(frame => frame.lineId === 'postfix');
+    const computing = v.mode === 'postfix' || (boundary >= 0 && step.stepIndex >= boundary);
+    const originalHeading = v.mode === 'infix' ? ['中缀表达式'] : [];
+    const headings = computing ? ['后缀序列', '操作数栈（栈顶在右）'] : ['运算符栈（栈顶在右）', '后缀序列'];
+    assert.deepEqual(await sequenceHeadings(page), [...originalHeading, ...headings]);
+    assert.deepEqual(await cells(page, 'operators'), computing ? [] : v.operators.map(token => token.text));
+    if (step.lineId === 'compute') {
+      await layer(page, 'operands').locator('rect[stroke="#8a4b00"]').first().waitFor({ state: 'detached' });
+    }
+    assert.deepEqual(await cells(page, 'operands'), v.stack.map(display));
+    if (step.lineId === 'done') {
+      assert.deepEqual(await indices(page, 'operands'), ['最终结果']);
+      assert.equal(await layer(page, 'operands').locator('[data-avc-key="g-0"] rect').getAttribute('stroke'), '#0a6b4a');
+    }
   }
   if (step.algorithm === 'naive-string-match' || step.algorithm === 'kmp') {
     assert.ok(await layer(page, 'match').count());
@@ -141,6 +156,32 @@ try {
         return animation.getBoundingClientRect().bottom <= viewport.getBoundingClientRect().bottom;
       }), 'all three rows fit in the desktop demo viewport');
     }
+    if (id === 'expression-evaluation') {
+      const start = run.steps.findIndex(step => step.lineId === 'postfix');
+      let index = 1;
+      if (mode === 'infix') {
+        for (; index < start; index++) await page.click('#nextBtn');
+        await assertStep(page, run, start);
+        assert.deepEqual(await cells(page, 'infix'), ['8', '/', '(', '2', '-', '3', ')']);
+        await page.click('#prevBtn');
+        await assertStep(page, run, --index);
+      }
+      const firstCompute = run.steps.findIndex(step => step.lineId === 'compute');
+      for (; index < firstCompute - 1; index++) await page.click('#nextBtn');
+      const highlighted = await page.locator('#nextBtn').evaluate(button => {
+        button.click();
+        const stack = document.querySelector('[data-avc-svg="f-operands"]');
+        return Array.from(stack.querySelectorAll('rect[stroke="#8a4b00"]'), rect => {
+          const key = rect.closest('[data-avc-key]').dataset.avcKey.slice(2);
+          return stack.querySelector('[data-avc-key="gv-' + key + '"]').textContent;
+        });
+      });
+      assert.deepEqual(highlighted, ['2', '3']);
+      await assertStep(page, run, firstCompute);
+      assert.deepEqual(await cells(page, 'postfix'), ['8', '2', '3', '-', '/']);
+      assert.deepEqual(await cells(page, 'operands'), ['8', '-1']);
+      assert.match(await explanation.locator('.bsviz-status').textContent(), /2 - 3 = -1/);
+    }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
     if (caption) assert.match(await stateTables.innerText(), caption, id);
@@ -158,6 +199,9 @@ try {
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
     await assertStep(page, run, index);
+    if (id === 'expression-evaluation') {
+      assert.match(await explanation.locator('.bsviz-status').textContent(), /8 \/ \(-1\) = -8/);
+    }
     const stepResponse = await page.request.get(base + '/api/runs/' + run.runId + '/steps/' + index);
     assert.equal(stepResponse.status(), 200, id);
     assert.deepEqual((await stepResponse.json()).step, run.steps[index]);
@@ -220,6 +264,17 @@ try {
       assert.deepEqual(await cells(page, 'infix'), ['12', '+', '末尾']);
       assert.deepEqual(await indices(page, 'infix'), ['0', '3', '4']);
       assert.match(await explanation.locator('.bsviz-caption').textContent(), /缺少操作数/);
+    }
+    if (id === 'expression-evaluation') {
+      await page.click('#c-edit');
+      await page.fill('#c-data', mode === 'infix' ? '8 / (' : '8 0 /');
+      const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/expression-evaluation/runs'));
+      await page.click('#startBtn');
+      const invalid = await (await pending).json();
+      await page.click('[data-t="last"]');
+      await assertStep(page, invalid, invalid.steps.length - 1);
+      assert.match(await explanation.locator('.bsviz-caption').textContent(), mode === 'infix' ? /缺少操作数/ : /除数为零/);
+      assert.deepEqual(await indices(page, 'operands'), []);
     }
     console.log(id + ' · Plus 动画、状态显示、源码、步骤查询、单步回退、重置和 Mock 问答通过');
   }

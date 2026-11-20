@@ -74,7 +74,6 @@ export function createFStateTable(config, algorithm, input) {
           table('运算符栈（底到顶）', ['词元', '原下标'], tokenRows(v.operators)),
           table('后缀序列', ['词元', '原下标'], tokenRows(v.output)),
         ] : [];
-        if (algorithm === 'expression-evaluation') stacks.unshift(table('操作数栈（底到顶）', ['值'], v.stack.map(value => [value])));
         views = config.chapter === 6 ? [...graphTables(algorithm, input, v), ...stacks] : stacks;
       }
       element.replaceChildren(...views);

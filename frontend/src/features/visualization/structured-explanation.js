@@ -78,9 +78,18 @@ function stringDetails(run, step) {
       if (step.done && step.result?.morePaths) details.push('表中仅展示前 8 条关键路径');
       return details;
     }
+    case 'expression-evaluation': {
+      const details = fields([['当前词元', v.token], ['原串下标', v.index], ['操作数栈（底到顶）', v.stack],
+        ['运算符栈', v.operators.length ? v.operators.map(token => token.text) : null],
+        ['后缀序列', v.output.map(token => token.text)]]);
+      if (step.lineId === 'compute') {
+        const right = v.right < 0 ? '(' + v.right + ')' : v.right;
+        details.unshift(v.left + ' ' + v.token + ' ' + right + ' = ' + v.value);
+      }
+      return details;
+    }
     default:
-      return fields([['当前词元', v.token], ['操作数栈（底到顶）', step.algorithm === 'expression-evaluation' ? v.stack : null],
-        ['左操作数', v.left], ['右操作数', v.right], ['计算结果', v.value],
+      return fields([['当前词元', v.token], ['左操作数', v.left], ['右操作数', v.right], ['计算结果', v.value],
         ['节点', v.currentNode], ['当前节点缓存值', v.cache?.[v.currentNode]],
         ['运算符栈', v.operators.map(token => token.text)], ['后缀序列', v.output.map(token => token.text)]]);
   }

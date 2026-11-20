@@ -29,25 +29,30 @@ function viewportGraphLayout(vertices, { width, height }) {
   const spanX = Math.max(1, width - 80);
   const spanY = Math.max(1, height - 80);
   // Keep the same rows as the explanation above the graph grows or collapses.
-  const columns = Math.min(count, Math.max(2, Math.round(Math.sqrt(count * spanX / 340))));
+  const columns = Math.max(1, Math.min(count, Math.max(2, Math.round(Math.sqrt(count * spanX / 340)))));
   const rows = Math.ceil(count / columns);
-  const nodes = vertices.map((node, index) => {
-    if (count === 1) return { ...node, x: 0.5, y: 0.5 };
+  const positions = vertices.map((_, index) => {
+    if (count === 1) return [0, 0];
     if (count === 2) {
-      const offset = index === 0 ? 0.14 : 0.86;
-      return { ...node, x: width >= 320 ? offset : 0.5, y: width >= 320 ? 0.5 : offset };
+      const offset = index === 0 ? -1 : 1;
+      return width >= 320 ? [offset, 0] : [0, offset];
     }
     if (count <= 8) {
       const phase = count === 4 ? -Math.PI / 4 : -Math.PI / 2;
       const angle = phase + 2 * Math.PI * index / count;
-      return { ...node, x: 0.5 + 0.46 * Math.cos(angle), y: 0.5 + 0.40 * Math.sin(angle) };
+      return [Math.cos(angle), Math.sin(angle)];
     }
     const row = Math.floor(index / columns);
     const rowSize = Math.min(columns, count - row * columns);
-    return {
-      ...node, x: (index % columns + 0.5 + (columns - rowSize) / 2) / columns,
-      y: (row + 0.5) / rows,
-    };
+    return [index % columns - (rowSize - 1) / 2, row - (rows - 1) / 2];
+  });
+  // Scale both axes in pixels before converting to the renderer's normalized coordinates.
+  const extentX = Math.max(0.5, ...positions.map(([x]) => Math.abs(x)));
+  const extentY = Math.max(0.5, ...positions.map(([, y]) => Math.abs(y)));
+  const scale = 0.44 * Math.min(spanX / extentX, spanY / extentY);
+  const nodes = vertices.map((node, index) => {
+    const [x, y] = positions[index];
+    return { ...node, x: 0.5 + x * scale / spanX, y: 0.5 + y * scale / spanY };
   });
   let spacing = Math.min(width, height) * 0.42;
   for (const [index, node] of nodes.entries()) {

@@ -21,11 +21,31 @@ async function assertFullCanvas(page) {
   const stage = page.locator('.b-animation-stage');
   assert.equal(await stage.locator('> svg').count(), 1);
   assert.equal(await stage.locator('.canvas-card').count(), 0);
-  const occupiedWidth = await stage.locator('> svg').evaluate(svg => {
-    const circles = Array.from(svg.querySelectorAll('[data-graph-node] circle'), circle => circle.parentElement.parentElement.getBoundingClientRect());
-    return (Math.max(...circles.map(box => box.right)) - Math.min(...circles.map(box => box.left))) / svg.getBoundingClientRect().width;
+  const geometry = await stage.locator('> svg').evaluate(svg => {
+    const circles = Array.from(svg.querySelectorAll('[data-graph-node] circle'), circle => circle.getBoundingClientRect());
+    const box = svg.getBoundingClientRect();
+    const graphWidth = Math.max(...circles.map(circle => circle.right)) - Math.min(...circles.map(circle => circle.left));
+    const graphHeight = Math.max(...circles.map(circle => circle.bottom)) - Math.min(...circles.map(circle => circle.top));
+    return {
+      occupied: Math.max(graphWidth, graphHeight) / Math.min(box.width, box.height),
+      points: circles.map(circle => ({ x: circle.x + circle.width / 2, y: circle.y + circle.height / 2 })),
+    };
   });
-  assert.ok(occupiedWidth >= 0.55, '图节点应在可视区横向展开，实际比例 ' + occupiedWidth);
+  const { occupied, points } = geometry;
+  if (points.length < 3) return;
+  assert.ok(occupied >= 0.65, '图节点应使用可用空间，实际比例 ' + occupied);
+  if (points.length <= 8) {
+    const distances = points.map((point, index) => {
+      const next = points[(index + 1) % points.length];
+      return Math.hypot(next.x - point.x, next.y - point.y);
+    });
+    assert.ok(Math.max(...distances) - Math.min(...distances) < 1, '环形布局上的节点应保持等距');
+  } else {
+    const nextRow = points.find(point => point.y > points[0].y + 1);
+    const xSpacing = points[1].x - points[0].x;
+    const ySpacing = nextRow.y - points[0].y;
+    assert.ok(Math.abs(xSpacing - ySpacing) < 1, '网格的横向和纵向间距应相等');
+  }
 }
 
 let browser;
@@ -86,6 +106,10 @@ try {
   const isolated = page.locator('[data-graph-node="E"] circle');
   await isolated.waitFor();
   await assertFullCanvas(page);
+  const originalViewport = page.viewportSize();
+  await page.setViewportSize({ width: 1720, height: 760 });
+  await assertFullCanvas(page);
+  await page.setViewportSize(originalViewport);
   assert.equal(await page.locator('#bfs-fields').isHidden(), true);
   assert.equal(await page.locator('#fillDemo').isHidden(), true);
   assert.equal(await page.locator('#bfs-run-detail').innerText(), '无向图 · 5 个顶点 · 3 条边 · 起点 A');

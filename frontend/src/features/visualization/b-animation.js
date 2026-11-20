@@ -5,26 +5,21 @@ import { describeGraphStep } from './graph-explanation.js';
 import { createUnionFindTable } from './union-find-table.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const FULL_GRAPH_ALGORITHMS = new Set(['bfs', 'dfs', 'prim', 'kruskal', 'dijkstra']);
+const GRAPH_TABLE_LABELS = new Map([
+  ['union-find', '父节点与秩'],
+  ['floyd', '距离矩阵'],
+  ['dijkstra', '最短路径状态表'],
+]);
 
-export function usesSplitGraphCanvas(algorithm) {
-  return algorithm === 'union-find' || algorithm === 'floyd';
+export function graphTableLabel(algorithm) {
+  return GRAPH_TABLE_LABELS.get(algorithm);
 }
 
-export function usesFullGraphCanvas(algorithm) {
-  return FULL_GRAPH_ALGORITHMS.has(algorithm) || usesSplitGraphCanvas(algorithm);
-}
-
-function vertexLayout(nodes) {
-  const columns = Math.ceil(Math.sqrt(nodes.length * 1.5));
-  const rows = Math.ceil(nodes.length / columns);
-  return nodes.map((id, index) => {
+function graphVertices(nodes) {
+  return nodes.map(id => {
     const chars = [...id];
     const label = chars.length > 4 ? chars.slice(0, 3).join('') + '…' : id;
-    const node = { id, label };
-    if (nodes.length === 1) return { ...node, x: 0.5, y: 0.5 };
-    if (nodes.length <= 12) return node;
-    return { ...node, x: index % columns / (columns - 1), y: Math.floor(index / columns) / (rows - 1) };
+    return { id, label };
   });
 }
 
@@ -97,7 +92,7 @@ function prepareGraph(run) {
   const links = edges.map(([from, to, w]) => ({
     from, to, w, bend: directed && from !== to && pairs.has(keyOf(to, from)),
   }));
-  return { vertices: vertexLayout(nodes), links, keyOf, discoveryAt };
+  return { vertices: graphVertices(nodes), links, keyOf, discoveryAt };
 }
 
 function graphFrame(run, graph, step, viewportSize) {
@@ -133,7 +128,7 @@ function graphFrame(run, graph, step, viewportSize) {
     return { ...edge, state };
   });
   const labels = v.dist ?? v.key ?? v.inDegree;
-  const layout = viewportSize ? viewportGraphLayout(graph.vertices, viewportSize) : { nodes: graph.vertices };
+  const layout = viewportGraphLayout(graph.vertices, viewportSize);
   const nodes = layout.nodes.map(node => labels ? { ...node, sub: labels[node.id] } : node);
   return graphLayer({
     id: 'b-graph', title: '输入图', nodes, edges, directed: run.graph.directed,
@@ -166,18 +161,22 @@ function forestFrame(vertices, step, previous, viewportSize) {
   });
 }
 
-function createDistanceTable(nodes) {
+function createGraphTable(caption, columns) {
   const table = document.createElement('table');
   table.className = 'uf-table';
-  table.createCaption().textContent = '距离矩阵（行是起点，列是终点）';
+  table.createCaption().textContent = caption;
   const header = table.createTHead().insertRow();
-  for (const label of ['起点', ...nodes]) {
+  for (const label of columns) {
     const th = document.createElement('th');
     th.scope = 'col';
     th.textContent = label;
     header.append(th);
   }
+  return table;
+}
 
+function createDistanceMatrix(nodes) {
+  const table = createGraphTable('距离矩阵（行是起点，列是终点）', ['起点', ...nodes]);
   const body = table.createTBody();
   const cells = nodes.map(from => {
     const row = body.insertRow();
@@ -202,6 +201,35 @@ function createDistanceTable(nodes) {
   };
 }
 
+function createDijkstraTable({ nodes, start }) {
+  const table = createGraphTable('最短路径状态表（起点：' + start + '）', ['顶点', '距离', '前驱', '已确定']);
+  const body = table.createTBody();
+  const cells = nodes.map(node => {
+    const row = body.insertRow();
+    const heading = document.createElement('th');
+    heading.scope = 'row';
+    heading.textContent = node;
+    row.append(heading);
+    return [node, row.insertCell(), row.insertCell(), row.insertCell()];
+  });
+  return {
+    element: table,
+    showStep({ event, variables: { dist, previous, visited, currentEdge, currentNode } }) {
+      const settled = new Set(visited);
+      const [from, to] = currentEdge ?? [];
+      const target = event === 'start-dist' ? start : to;
+      for (const [node, distance, predecessor, confirmed] of cells) {
+        distance.textContent = dist[node];
+        predecessor.textContent = previous[node] ?? '—';
+        confirmed.textContent = settled.has(node) ? '是' : '否';
+        distance.dataset.active = node === target ? 'target' : node === from ? 'via' : '';
+        predecessor.dataset.active = node === to && event === 'update-dist' ? 'target' : '';
+        confirmed.dataset.active = node === currentNode && event === 'mark-visited' ? 'target' : '';
+      }
+    },
+  };
+}
+
 function installVertexTitles(host, vertices) {
   const byKey = new Map(vertices.map(({ id }) => ['n-' + id, id]));
   for (const shape of host.querySelectorAll('[data-avc-key^="n-"]')) {
@@ -219,25 +247,25 @@ function installVertexTitles(host, vertices) {
 
 export function createBAnimation(host, run, explainHost) {
   const graph = run.graph ? prepareGraph(run) : null;
-  const vertices = graph?.vertices ?? vertexLayout(run.input.elements);
-  const fillViewport = usesFullGraphCanvas(run.algorithm);
-  const stateTable = !graph ? createUnionFindTable(run.input)
-    : run.algorithm === 'floyd' ? createDistanceTable(run.graph.nodes) : null;
+  const vertices = graph?.vertices ?? graphVertices(run.input.elements);
+  let stateTable;
+  if (!graph) stateTable = createUnionFindTable(run.input);
+  else if (run.algorithm === 'floyd') stateTable = createDistanceMatrix(run.graph.nodes);
+  else if (run.algorithm === 'dijkstra') stateTable = createDijkstraTable(run.graph);
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-graph';
   element.className = 'b-animation';
-  element.classList.toggle('b-animation-full', fillViewport);
-  element.classList.toggle('b-animation-wide', !fillViewport && vertices.length > 12);
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz b-animation-stage';
   if (stateTable) {
     element.classList.add('b-animation-split');
+    element.classList.toggle('b-animation-paths', Boolean(graph));
     element.classList.toggle('b-animation-matrix', run.algorithm === 'floyd');
     const data = document.createElement('div');
     data.className = 'b-animation-data';
     data.tabIndex = 0;
     data.setAttribute('role', 'region');
-    data.setAttribute('aria-label', graph ? '距离矩阵' : '父节点与秩');
+    data.setAttribute('aria-label', graphTableLabel(run.algorithm));
     data.append(stateTable.element);
     const graphPane = document.createElement('div');
     graphPane.className = 'b-graph-viewport';
@@ -247,13 +275,13 @@ export function createBAnimation(host, run, explainHost) {
     element.append(canvas);
   }
   host.append(element);
-  const stage = createStage(canvas, { fillViewport });
+  const stage = createStage(canvas, { fillViewport: true });
   const { explain, caption, status } = createExplanationPanel();
   explainHost.replaceChildren(explain);
 
   let current = null;
   function draw(step, animate = true) {
-    const viewportSize = fillViewport ? { width: canvas.clientWidth, height: canvas.clientHeight } : null;
+    const viewportSize = { width: canvas.clientWidth, height: canvas.clientHeight };
     const previous = run.steps[step.stepIndex - 1];
     const frame = graph ? graphFrame(run, graph, step, viewportSize) : forestFrame(vertices, step, previous, viewportSize);
     stage.render([frame], { animate });
@@ -262,10 +290,10 @@ export function createBAnimation(host, run, explainHost) {
     svg?.setAttribute('role', 'img');
     svg?.setAttribute('aria-label', frame.title);
   }
-  const observer = fillViewport ? new ResizeObserver(() => {
+  const observer = new ResizeObserver(() => {
     if (current) draw(current, false);
-  }) : null;
-  observer?.observe(canvas);
+  });
+  observer.observe(canvas);
 
   function showStep(step) {
     current = step;
@@ -289,7 +317,7 @@ export function createBAnimation(host, run, explainHost) {
       showStep(current);
     },
     destroy() {
-      observer?.disconnect();
+      observer.disconnect();
       stage.clear();
       element.remove();
       explain.remove();

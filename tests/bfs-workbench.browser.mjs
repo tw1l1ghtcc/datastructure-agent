@@ -48,6 +48,42 @@ async function assertFullCanvas(page, selector = '[data-graph-view="canvas"] [da
   }
 }
 
+async function assertSplitCanvas(page, tablePane) {
+  await assertFullCanvas(page, '.b-graph-viewport');
+  const graphPane = page.locator('.b-graph-viewport');
+  const tableBox = await tablePane.boundingBox();
+  const graphBox = await graphPane.boundingBox();
+  const workspace = await page.locator('[data-viz-body]').boundingBox();
+  assert.ok(Math.abs(tableBox.x + tableBox.width - graphBox.x) <= 1 &&
+    graphBox.width > tableBox.width && Math.abs(tableBox.y - graphBox.y) <= 1 &&
+    Math.abs(tableBox.width + graphBox.width - workspace.width) <= 1 &&
+    Math.abs(tableBox.height - workspace.height) <= 1 && Math.abs(graphBox.height - workspace.height) <= 1,
+  '状态表和图应左右并排铺满画布');
+  const style = await tablePane.evaluate(element => {
+    const pane = getComputedStyle(element);
+    const header = getComputedStyle(element.querySelector('thead th'));
+    const viewport = getComputedStyle(element.closest('[data-viz-body]'));
+    const bar = getComputedStyle(element.closest('.vizwin').querySelector('.win-bar'));
+    return {
+      colors: [pane.backgroundColor, header.backgroundColor, header.borderBottomColor],
+      theme: [viewport.backgroundColor, viewport.backgroundColor, bar.borderBottomColor],
+      divider: pane.borderRightWidth
+    };
+  });
+  assert.deepEqual(style.colors, style.theme);
+  assert.equal(style.divider, '0px');
+  const scale = () => graphPane.locator('.b-animation-stage').evaluate(stage =>
+    new DOMMatrix(getComputedStyle(stage).transform).a);
+  await tablePane.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100 });
+  assert.equal(await scale(), 1);
+  await graphPane.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100,
+    clientX: graphBox.x + graphBox.width / 2, clientY: graphBox.y + graphBox.height / 2 });
+  assert.ok(await scale() > 1);
+  assert.deepEqual(await tablePane.boundingBox(), tableBox);
+  await page.locator('[data-viz-view-reset]').click();
+  assert.equal(await scale(), 1);
+}
+
 let browser;
 try {
   const base = await new Promise((resolve, reject) => {
@@ -199,6 +235,10 @@ try {
       await page.click('#startBtn');
       assert.match(await page.locator('#msgBox').innerText(), /非负权重/);
       await weight.fill('2');
+      await page.click('#bfs-back');
+      const nodes = page.locator('#bfs-nodes');
+      await nodes.fill(await nodes.inputValue() + ', 孤立点');
+      await page.click('#bfs-next');
     }
     const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/' + algorithm + '/runs'));
     await page.click('#startBtn');
@@ -215,52 +255,36 @@ try {
     assert.equal(await page.locator('[data-explain-host] .bsviz-caption').innerText(), graphRun.steps.at(-1).description);
     assert.ok((await page.locator('[data-explain-host] .bsviz-status').innerText()).length > 10, algorithm);
     assert.equal(await page.locator('[data-viz-engine="plus-graph"] [data-graph-node]').count(), graphRun.graph.nodes.length);
-    if (algorithm === 'topological-sort') {
-      assert.equal(await page.locator('.b-animation-stage .canvas-card').count(), 1);
-    } else if (algorithm === 'floyd') {
-      await assertFullCanvas(page, '.b-graph-viewport');
-    } else {
-      await assertFullCanvas(page);
-    }
+    if (algorithm !== 'floyd' && algorithm !== 'dijkstra') await assertFullCanvas(page);
     if (algorithm === 'kruskal') {
       const selected = page.locator('[data-layer="b-graph"] [data-avc-key^="e-"] line[stroke="#0a6b4a"]');
       assert.equal(await selected.count(), graphRun.result.selectedEdges.length);
     }
+    if (algorithm === 'dijkstra') {
+      const status = page.getByRole('region', { name: '最短路径状态表' });
+      await assertSplitCanvas(page, status);
+      assert.match(await status.locator('caption').innerText(), /起点：A/);
+      const rows = status.locator('tbody tr');
+      const displayed = () => rows.evaluateAll(rows => rows.map(row => Array.from(row.cells, cell => cell.textContent)));
+      const expected = ({ dist, previous, visited }) => graphRun.graph.nodes.map(node =>
+        [node, String(dist[node]), previous[node] ?? '—', visited.includes(node) ? '是' : '否']);
+      assert.deepEqual(await displayed(), expected(graphRun.steps.at(-1).variables));
+      assert.deepEqual(await rows.filter({ hasText: '孤立点' }).locator('td').allTextContents(), ['∞', '—', '否']);
+
+      const ruler = page.locator('[data-tl-ruler]');
+      await ruler.press('Home');
+      assert.deepEqual(await displayed(), expected(graphRun.steps[0].variables));
+      const update = graphRun.steps.find(step => step.event === 'update-dist');
+      for (let i = 0; i < update.stepIndex; i++) await ruler.press('ArrowRight');
+      assert.deepEqual(await displayed(), expected(update.variables));
+      assert.deepEqual(await rows.nth(graphRun.graph.nodes.indexOf(update.variables.currentEdge[1]))
+        .locator('[data-active="target"]').allTextContents(), [String(update.variables.currentEdge[2]), 'A']);
+    }
     if (algorithm === 'floyd') {
       const matrix = page.getByRole('region', { name: '距离矩阵' });
+      await assertSplitCanvas(page, matrix);
       const table = matrix.locator('.uf-table');
       const graphPane = page.locator('.b-graph-viewport');
-      const tableBox = await matrix.boundingBox();
-      const graphBox = await graphPane.boundingBox();
-      const workspace = await page.locator('[data-viz-body]').boundingBox();
-      assert.ok(Math.abs(tableBox.x + tableBox.width - graphBox.x) <= 1 &&
-        graphBox.width > tableBox.width && Math.abs(tableBox.y - graphBox.y) <= 1 &&
-        Math.abs(tableBox.width + graphBox.width - workspace.width) <= 1 &&
-        Math.abs(tableBox.height - workspace.height) <= 1 && Math.abs(graphBox.height - workspace.height) <= 1,
-      'Floyd 的距离矩阵和图应左右并排铺满画布');
-      const style = await matrix.evaluate(element => {
-        const pane = getComputedStyle(element);
-        const header = getComputedStyle(element.querySelector('thead th'));
-        const viewport = getComputedStyle(element.closest('[data-viz-body]'));
-        const bar = getComputedStyle(element.closest('.vizwin').querySelector('.win-bar'));
-        return {
-          colors: [pane.backgroundColor, header.backgroundColor, header.borderBottomColor],
-          theme: [viewport.backgroundColor, viewport.backgroundColor, bar.borderBottomColor],
-          divider: pane.borderRightWidth
-        };
-      });
-      assert.deepEqual(style.colors, style.theme);
-      assert.equal(style.divider, '0px');
-      const scale = () => graphPane.locator('.b-animation-stage').evaluate(stage =>
-        new DOMMatrix(getComputedStyle(stage).transform).a);
-      await matrix.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100 });
-      assert.equal(await scale(), 1);
-      await graphPane.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100,
-        clientX: graphBox.x + graphBox.width / 2, clientY: graphBox.y + graphBox.height / 2 });
-      assert.ok(await scale() > 1);
-      assert.deepEqual(await matrix.boundingBox(), tableBox);
-      await page.locator('[data-viz-view-reset]').click();
-      assert.equal(await scale(), 1);
       const values = await table.locator('tbody tr').evaluateAll(rows =>
         rows.map(row => Array.from(row.querySelectorAll('td'), cell => cell.textContent).join(', ')));
       assert.deepEqual(values, graphRun.steps.at(-1).variables.matrix);
@@ -304,6 +328,10 @@ try {
   await page.locator('#bfs-edit').waitFor();
   await page.click('[data-t="last"]');
   assert.match(await page.locator('[data-explain-host]').innerText(), /存在环/);
+  await page.locator('[data-viz-full]').click();
+  await assertFullCanvas(page);
+  await page.keyboard.press('Escape');
+  await assertFullCanvas(page);
 
   await selectWorkbenchAlgorithm(page, 'bfs');
   await page.click('#fillDemo');

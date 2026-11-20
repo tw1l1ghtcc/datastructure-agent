@@ -461,12 +461,8 @@
 .a-sort-auxiliary[data-sort-layer="temp"] { min-height: 165px; }
 .a-sort-auxiliary .canvas-card header span { display: none; }
 
-.b-animation { display: grid; gap: 8px; width: 440px; }
-.b-animation-wide { width: 590px; }
-.b-animation-stage.plus-viz { min-height: 334px; height: auto; overflow: visible; }
-.b-animation-stage .canvas-card header span { display: none; }
-.b-animation-full { display: block; width: 100%; height: 100%; }
-.b-animation-full .b-animation-stage.plus-viz {
+.b-animation { width: 100%; height: 100%; }
+.b-animation-stage.plus-viz {
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -480,7 +476,7 @@
   grid-template-rows: minmax(0, 1fr);
   gap: 0;
 }
-.b-animation-split.b-animation-matrix {
+.b-animation-split.b-animation-paths {
   grid-template-columns: clamp(160px, 40%, 400px) minmax(0, 1fr);
 }
 .b-animation-data {
@@ -498,7 +494,7 @@
   top: 0;
   z-index: 1;
 }
-.b-animation-split:not(.b-animation-matrix) .uf-table th:last-child { width: 20%; }
+.b-animation-split:not(.b-animation-paths) .uf-table th:last-child { width: 20%; }
 .b-animation-matrix .uf-table { width: max-content; min-width: 100%; table-layout: auto; }
 .b-animation-matrix .uf-table th { max-width: 9rem; }
 .b-animation-matrix .uf-table td { white-space: nowrap; }
@@ -507,8 +503,8 @@
   left: 0;
 }
 .b-animation-matrix .uf-table thead th:first-child { z-index: 2; }
-.b-animation-matrix td[data-active="via"] { background: #e8e9fb; }
-.b-animation-matrix td[data-active="target"] { background: #ffedc7; font-weight: 650; }
+.b-animation-paths td[data-active="via"] { background: #e8e9fb; }
+.b-animation-paths td[data-active="target"] { background: #ffedc7; font-weight: 650; }
 .b-graph-viewport {
   min-width: 0;
   min-height: 0;

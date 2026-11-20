@@ -474,34 +474,42 @@
 @media (prefers-reduced-motion: no-preference) {
   .b-animation-stage :is(circle, line, polyline) { transition: fill 180ms ease, stroke 180ms ease, stroke-width 180ms ease; }
 }
-.b-animation-data { max-height: 202px; overflow: auto; }
-.b-animation-matrix { max-height: 236px; }
-.b-animation-data .uf-table { width: 100%; min-width: 0; }
-.b-animation-data caption { text-align: left; padding: 5px 0; font-weight: 600; }
-.b-animation-data :is(th, td) { padding: 4px 6px; overflow-wrap: anywhere; }
-.b-animation-data td[data-active="via"] { background: #e8e9fb; }
-.b-animation-data td[data-active="target"] { background: #ffedc7; font-weight: 650; }
-.b-animation-forest {
+.b-animation-split {
   display: grid;
   grid-template-columns: clamp(112px, 29%, 260px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 0;
 }
-.b-animation-forest .b-animation-data {
+.b-animation-split.b-animation-matrix {
+  grid-template-columns: clamp(160px, 40%, 400px) minmax(0, 1fr);
+}
+.b-animation-data {
   min-width: 0;
-  max-height: none;
   padding: 0 8px 8px;
+  overflow: auto;
   background: var(--bl-panel);
 }
-.b-animation-forest .uf-table { table-layout: fixed; }
-.b-animation-forest .uf-table :is(th, td) { border-color: var(--bl-line); }
-.b-animation-forest .uf-table th {
+.b-animation-data .uf-table { width: 100%; min-width: 0; table-layout: fixed; }
+.b-animation-data caption { text-align: left; padding: 5px 0; font-weight: 600; }
+.b-animation-data .uf-table :is(th, td) { padding: 4px 6px; border-color: var(--bl-line); overflow-wrap: anywhere; }
+.b-animation-data .uf-table th { background: var(--bl-head); }
+.b-animation-data .uf-table thead th {
   position: sticky;
   top: 0;
-  background: var(--bl-head);
+  z-index: 1;
 }
-.b-animation-forest .uf-table th:last-child { width: 20%; }
-.b-forest-viewport {
+.b-animation-split:not(.b-animation-matrix) .uf-table th:last-child { width: 20%; }
+.b-animation-matrix .uf-table { width: max-content; min-width: 100%; table-layout: auto; }
+.b-animation-matrix .uf-table th { max-width: 9rem; }
+.b-animation-matrix .uf-table td { white-space: nowrap; }
+.b-animation-matrix .uf-table th:first-child {
+  position: sticky;
+  left: 0;
+}
+.b-animation-matrix .uf-table thead th:first-child { z-index: 2; }
+.b-animation-matrix td[data-active="via"] { background: #e8e9fb; }
+.b-animation-matrix td[data-active="target"] { background: #ffedc7; font-weight: 650; }
+.b-graph-viewport {
   min-width: 0;
   min-height: 0;
   overflow: hidden;

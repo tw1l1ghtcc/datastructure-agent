@@ -11,13 +11,13 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   windowsHide: true
 });
 
-async function assertFullCanvas(page) {
-  await page.waitForFunction(() => {
-    const body = document.querySelector('[data-graph-view="canvas"] [data-viz-body]');
+async function assertFullCanvas(page, selector = '[data-graph-view="canvas"] [data-viz-body]') {
+  await page.waitForFunction(selector => {
+    const body = document.querySelector(selector);
     const svg = body?.querySelector('.b-animation-stage > svg');
     return svg && Math.abs(svg.viewBox.baseVal.width - body.clientWidth) <= 1 &&
       Math.abs(svg.viewBox.baseVal.height - body.clientHeight) <= 1;
-  });
+  }, selector);
   const stage = page.locator('.b-animation-stage');
   assert.equal(await stage.locator('> svg').count(), 1);
   assert.equal(await stage.locator('.canvas-card').count(), 0);
@@ -215,8 +215,10 @@ try {
     assert.equal(await page.locator('[data-explain-host] .bsviz-caption').innerText(), graphRun.steps.at(-1).description);
     assert.ok((await page.locator('[data-explain-host] .bsviz-status').innerText()).length > 10, algorithm);
     assert.equal(await page.locator('[data-viz-engine="plus-graph"] [data-graph-node]').count(), graphRun.graph.nodes.length);
-    if (algorithm === 'floyd' || algorithm === 'topological-sort') {
+    if (algorithm === 'topological-sort') {
       assert.equal(await page.locator('.b-animation-stage .canvas-card').count(), 1);
+    } else if (algorithm === 'floyd') {
+      await assertFullCanvas(page, '.b-graph-viewport');
     } else {
       await assertFullCanvas(page);
     }
@@ -225,7 +227,40 @@ try {
       assert.equal(await selected.count(), graphRun.result.selectedEdges.length);
     }
     if (algorithm === 'floyd') {
-      const table = page.locator('.b-animation-data .uf-table');
+      const matrix = page.getByRole('region', { name: '距离矩阵' });
+      const table = matrix.locator('.uf-table');
+      const graphPane = page.locator('.b-graph-viewport');
+      const tableBox = await matrix.boundingBox();
+      const graphBox = await graphPane.boundingBox();
+      const workspace = await page.locator('[data-viz-body]').boundingBox();
+      assert.ok(Math.abs(tableBox.x + tableBox.width - graphBox.x) <= 1 &&
+        graphBox.width > tableBox.width && Math.abs(tableBox.y - graphBox.y) <= 1 &&
+        Math.abs(tableBox.width + graphBox.width - workspace.width) <= 1 &&
+        Math.abs(tableBox.height - workspace.height) <= 1 && Math.abs(graphBox.height - workspace.height) <= 1,
+      'Floyd 的距离矩阵和图应左右并排铺满画布');
+      const style = await matrix.evaluate(element => {
+        const pane = getComputedStyle(element);
+        const header = getComputedStyle(element.querySelector('thead th'));
+        const viewport = getComputedStyle(element.closest('[data-viz-body]'));
+        const bar = getComputedStyle(element.closest('.vizwin').querySelector('.win-bar'));
+        return {
+          colors: [pane.backgroundColor, header.backgroundColor, header.borderBottomColor],
+          theme: [viewport.backgroundColor, viewport.backgroundColor, bar.borderBottomColor],
+          divider: pane.borderRightWidth
+        };
+      });
+      assert.deepEqual(style.colors, style.theme);
+      assert.equal(style.divider, '0px');
+      const scale = () => graphPane.locator('.b-animation-stage').evaluate(stage =>
+        new DOMMatrix(getComputedStyle(stage).transform).a);
+      await matrix.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100 });
+      assert.equal(await scale(), 1);
+      await graphPane.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100,
+        clientX: graphBox.x + graphBox.width / 2, clientY: graphBox.y + graphBox.height / 2 });
+      assert.ok(await scale() > 1);
+      assert.deepEqual(await matrix.boundingBox(), tableBox);
+      await page.locator('[data-viz-view-reset]').click();
+      assert.equal(await scale(), 1);
       const values = await table.locator('tbody tr').evaluateAll(rows =>
         rows.map(row => Array.from(row.querySelectorAll('td'), cell => cell.textContent).join(', ')));
       assert.deepEqual(values, graphRun.steps.at(-1).variables.matrix);
@@ -233,6 +268,24 @@ try {
       const initial = await table.locator('tbody tr').evaluateAll(rows =>
         rows.map(row => Array.from(row.querySelectorAll('td'), cell => cell.textContent).join(', ')));
       assert.deepEqual(initial, graphRun.steps[0].variables.matrix);
+      await page.locator('[data-viz-full]').click();
+      await assertFullCanvas(page, '.b-graph-viewport');
+      await page.keyboard.press('Escape');
+      await assertFullCanvas(page, '.b-graph-viewport');
+
+      await page.click('#bfs-edit');
+      await page.click('#bfs-back');
+      await page.fill('#bfs-nodes', 'A, B, C, D, E, LongVertexNameOne, LongVertexNameTwo, LongVertexNameThree');
+      await page.click('#bfs-next');
+      await page.click('#startBtn');
+      await page.locator('#bfs-edit').waitFor();
+      assert.equal(await table.locator('tbody tr').count(), 8);
+      const beforeScroll = await graphPane.boundingBox();
+      assert.ok(await matrix.evaluate(element => {
+        element.scrollLeft = element.scrollWidth;
+        return element.scrollLeft > 0;
+      }), '较宽的 Floyd 距离矩阵可独立横向滚动');
+      assert.deepEqual(await graphPane.boundingBox(), beforeScroll);
     }
     const agent = await page.request.post(base + '/api/agent/explain', {
       data: { runId: graphRun.runId, stepIndex: 1, question: '这一步发生了什么？', hintLevel: 2 }

@@ -15,7 +15,7 @@ import { createCAnimation } from './c-animation.js';
 import { createVisualization } from './index.js';
 import { arraySearch } from '../workbench/array-search.js';
 import { graphAlgorithm } from '../workbench/graph-algorithms.js';
-import { createBAnimation, usesFullGraphCanvas } from './b-animation.js';
+import { createBAnimation, usesFullGraphCanvas, usesSplitGraphCanvas } from './b-animation.js';
 import { isASort } from './a-sort-state.js';
 import { createASortVisualization } from './a-sort-view.js';
 import { buildPrototypeArrayFrame } from './prototype-array.js';
@@ -116,11 +116,14 @@ export function createVizWindow(host, {
   const custom = algorithm === 'custom-array';
   const graph = graphAlgorithm(algorithm);
   const fullGraphCanvas = usesFullGraphCanvas(algorithm);
+  const splitGraphCanvas = usesSplitGraphCanvas(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
   root.innerHTML = TEMPLATE;
-  if (unionFind) root.dataset.graphView = 'forest';
-  else if (graph) root.dataset.graphView = fullGraphCanvas ? 'canvas' : algorithm === 'floyd' ? 'table' : 'graph';
+  if (splitGraphCanvas) {
+    root.dataset.graphView = 'split';
+    root.querySelector('.viewport-hint').textContent = '右侧动画：拖拽平移 · Ctrl + 滚轮缩放 · Home 复位';
+  } else if (graph) root.dataset.graphView = fullGraphCanvas ? 'canvas' : 'graph';
   if (traceView) {
     root.dataset.traceAnimation = 'true';
     root.dataset.tableView = 'true';
@@ -138,13 +141,14 @@ export function createVizWindow(host, {
     root.querySelector('.vh-sub').textContent = '按步骤更新';
     root.querySelector('.viewport-legend').hidden = true;
     root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧父节点表，右侧父指针森林');
-    root.querySelector('.viewport-hint').textContent = '右侧动画：拖拽平移 · Ctrl + 滚轮缩放 · Home 复位';
   }
   if (graph) {
-    root.querySelector('.win-sub').textContent = graph.name + ' · 图视图';
-    root.querySelector('.vh-title').textContent = '图结构';
+    const viewTitle = splitGraphCanvas ? '图与距离矩阵' : '图结构';
+    root.querySelector('.win-sub').textContent = graph.name + (splitGraphCanvas ? ' · 图与距离矩阵' : ' · 图视图');
+    root.querySelector('.vh-title').textContent = viewTitle;
     root.querySelector('.vh-sub').textContent = graph.title;
-    root.querySelector('[data-viz-body]').setAttribute('aria-label', '图视口，拖拽平移，按住 Ctrl 滚动缩放，Home自适应取景');
+    root.querySelector('[data-viz-body]').setAttribute('aria-label', splitGraphCanvas ? '左侧距离矩阵，右侧图动画'
+      : '图视口，拖拽平移，按住 Ctrl 滚动缩放，Home自适应取景');
     root.querySelector('.viewport-legend').hidden = true;
   }
   
@@ -212,10 +216,10 @@ export function createVizWindow(host, {
   let currentRun = run;
   let state = { stepIndex: 0, total: 0, playing: false, canPrev: false, canNext: false };
 
-  const cameraViewport = () => unionFind ? scene.querySelector('.b-forest-viewport') : body;
+  const cameraViewport = () => splitGraphCanvas ? scene.querySelector('.b-graph-viewport') : body;
 
   function applyView() {
-    const target = unionFind ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
+    const target = splitGraphCanvas ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
     if (target) target.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   }
 

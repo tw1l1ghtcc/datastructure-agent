@@ -13,15 +13,15 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 
 async function assertSplitLayout(page) {
   await page.waitForFunction(() => {
-    const graph = document.querySelector('.b-forest-viewport');
+    const graph = document.querySelector('.b-graph-viewport');
     const svg = graph?.querySelector('.b-animation-stage > svg');
     if (!svg) return false;
     const { width, height } = svg.viewBox.baseVal;
     return width > 0 && height > 0 && width === graph.clientWidth && height === graph.clientHeight;
   });
-  return page.locator('.b-animation-forest').evaluate(layout => {
+  return page.locator('.b-animation-split').evaluate(layout => {
     const table = layout.querySelector('.b-animation-data').getBoundingClientRect();
-    const graph = layout.querySelector('.b-forest-viewport').getBoundingClientRect();
+    const graph = layout.querySelector('.b-graph-viewport').getBoundingClientRect();
     const workspace = layout.closest('[data-viz-body]').getBoundingClientRect();
     if (Math.abs(table.right - graph.left) > 1 || graph.width <= table.width ||
         Math.abs(table.top - graph.top) > 1 || Math.abs(table.height - graph.height) > 1 ||
@@ -68,7 +68,7 @@ try {
     edges.map(edge => edge.dataset.avcKey).sort());
   await forest.waitFor();
   await assertSplitLayout(page);
-  const tableAppearance = await page.locator('.b-animation-forest .b-animation-data').evaluate(pane => {
+  const tableAppearance = await page.locator('.b-animation-split .b-animation-data').evaluate(pane => {
     const win = pane.closest('.vizwin');
     const canvas = getComputedStyle(win.querySelector('[data-viz-body]'));
     const winBar = getComputedStyle(win.querySelector('.win-bar'));
@@ -147,8 +147,8 @@ try {
 
   await page.setViewportSize({ width: 1120, height: 780 });
   const normalWidth = await assertSplitLayout(page);
-  const dataPane = page.locator('.b-animation-forest .b-animation-data');
-  const graphPane = page.locator('.b-forest-viewport');
+  const dataPane = page.locator('.b-animation-split .b-animation-data');
+  const graphPane = page.locator('.b-graph-viewport');
   const canvas = graphPane.locator('.b-animation-stage');
   const scale = () => canvas.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).a);
   const tableBounds = await dataPane.boundingBox();

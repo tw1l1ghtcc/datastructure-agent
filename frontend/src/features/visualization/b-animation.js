@@ -5,10 +5,14 @@ import { describeGraphStep } from './graph-explanation.js';
 import { createUnionFindTable } from './union-find-table.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const FULL_GRAPH_ALGORITHMS = new Set(['bfs', 'dfs', 'prim', 'kruskal', 'dijkstra', 'union-find']);
+const FULL_GRAPH_ALGORITHMS = new Set(['bfs', 'dfs', 'prim', 'kruskal', 'dijkstra']);
+
+export function usesSplitGraphCanvas(algorithm) {
+  return algorithm === 'union-find' || algorithm === 'floyd';
+}
 
 export function usesFullGraphCanvas(algorithm) {
-  return FULL_GRAPH_ALGORITHMS.has(algorithm);
+  return FULL_GRAPH_ALGORITHMS.has(algorithm) || usesSplitGraphCanvas(algorithm);
 }
 
 function vertexLayout(nodes) {
@@ -217,37 +221,33 @@ export function createBAnimation(host, run, explainHost) {
   const graph = run.graph ? prepareGraph(run) : null;
   const vertices = graph?.vertices ?? vertexLayout(run.input.elements);
   const fillViewport = usesFullGraphCanvas(run.algorithm);
+  const stateTable = !graph ? createUnionFindTable(run.input)
+    : run.algorithm === 'floyd' ? createDistanceTable(run.graph.nodes) : null;
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-graph';
   element.className = 'b-animation';
   element.classList.toggle('b-animation-full', fillViewport);
   element.classList.toggle('b-animation-wide', !fillViewport && vertices.length > 12);
-  element.classList.toggle('b-animation-forest', !graph);
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz b-animation-stage';
-  if (graph) {
-    element.append(canvas);
-  } else {
-    const graphPane = document.createElement('div');
-    graphPane.className = 'b-forest-viewport';
-    graphPane.append(canvas);
-    element.append(graphPane);
-  }
-  host.append(element);
-  const stage = createStage(canvas, { fillViewport });
-  const stateTable = !graph ? createUnionFindTable(run.input)
-    : run.algorithm === 'floyd' ? createDistanceTable(run.graph.nodes) : null;
   if (stateTable) {
+    element.classList.add('b-animation-split');
+    element.classList.toggle('b-animation-matrix', run.algorithm === 'floyd');
     const data = document.createElement('div');
     data.className = 'b-animation-data';
-    data.classList.toggle('b-animation-matrix', run.algorithm === 'floyd');
     data.tabIndex = 0;
     data.setAttribute('role', 'region');
     data.setAttribute('aria-label', graph ? '距离矩阵' : '父节点与秩');
     data.append(stateTable.element);
-    if (graph) element.append(data);
-    else element.prepend(data);
+    const graphPane = document.createElement('div');
+    graphPane.className = 'b-graph-viewport';
+    graphPane.append(canvas);
+    element.append(data, graphPane);
+  } else {
+    element.append(canvas);
   }
+  host.append(element);
+  const stage = createStage(canvas, { fillViewport });
   const { explain, caption, status } = createExplanationPanel();
   explainHost.replaceChildren(explain);
 

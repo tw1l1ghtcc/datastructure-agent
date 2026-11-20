@@ -1,4 +1,11 @@
 // backend/src/routes/runs.js
+import { generateBracketMatchingSteps } from '../../../shared/algorithms/final/f/bracket-matching.js';
+import { generateInfixToPostfixSteps } from '../../../shared/algorithms/final/f/infix-to-postfix.js';
+import { generateExpressionEvaluationSteps } from '../../../shared/algorithms/final/f/expression-evaluation.js';
+import { generateNaiveStringMatchSteps } from '../../../shared/algorithms/final/f/naive-string-match.js';
+import { generateKmpSteps } from '../../../shared/algorithms/final/f/kmp.js';
+import { generateExpressionDagSteps } from '../../../shared/algorithms/final/f/expression-dag.js';
+import { generateCriticalPathSteps } from '../../../shared/algorithms/final/f/critical-path.js';
 import { generateAvlSteps } from '../../../shared/algorithms/final/d/avl-tree.js';
 import { generateRedBlackSteps } from '../../../shared/algorithms/final/d/red-black-tree.js';
 import { generateHashLinearProbingSteps } from '../../../shared/algorithms/final/d/hash-linear-probing.js';
@@ -91,6 +98,28 @@ function sendRun(res, run) {
   const payload = replay ? { runId, createdAt, algorithm, input, ...replay } : run;
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(payload));
+}
+
+const fGenerators = {
+  'bracket-matching': generateBracketMatchingSteps,
+  'infix-to-postfix': generateInfixToPostfixSteps,
+  'expression-evaluation': generateExpressionEvaluationSteps,
+  'naive-string-match': generateNaiveStringMatchSteps,
+  kmp: generateKmpSteps,
+  'expression-dag': generateExpressionDagSteps,
+  'critical-path': generateCriticalPathSteps,
+};
+
+export function handleCreateFRun(res, body, algorithm) {
+  let input, result;
+  try {
+    input = JSON.parse(body);
+    result = fGenerators[algorithm](input);
+  } catch (error) {
+    if (!(error instanceof SyntaxError || error instanceof TypeError || error instanceof RangeError)) throw error;
+    return sendError(res, 400, 'INVALID_INPUT', error.message);
+  }
+  sendRun(res, createRun({ algorithm, input, ...result }));
 }
 
 export function handleCreateGRun(res, body, algorithm) {

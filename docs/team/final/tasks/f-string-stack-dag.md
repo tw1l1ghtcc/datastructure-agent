@@ -10,15 +10,17 @@
 
 先完成 **KMP**，通过代表项联调后再接本组其余项目。复核人由 01 协调，画面与 02 联调。
 
+下表标记本分支的实现与自测情况。复核记录见 [F 包验收](../f-validation.md)。
+
 | 完成 | 算法或演示项 | 积分 | 填写位置 | 具体交付与验收 |
 |---|---|---:|---|---|
-| ☐ | 括号匹配 | 1 | [实现文件](../../../../shared/algorithms/final/f/bracket-matching.js) | 展示入栈、匹配出栈和错误位置；覆盖错配、多余右括号和剩余左括号。 |
-| ☐ | 中缀转后缀 | 2 | [实现文件](../../../../shared/algorithms/final/f/infix-to-postfix.js) | 记录运算符栈与输出序列；覆盖括号、优先级和结合性。 |
-| ☐ | 表达式求值 | 2 | [实现文件](../../../../shared/algorithms/final/f/expression-evaluation.js) | 记录操作数栈和计算结果，明确支持的运算符；覆盖除零和非法表达式。 |
-| ☐ | 朴素模式匹配 | 1 | [实现文件](../../../../shared/algorithms/final/f/naive-string-match.js) | 记录主串、模式串下标及失配后的移动；覆盖空模式、未匹配和重复字符。 |
-| ☐ | KMP | 2 | [实现文件](../../../../shared/algorithms/final/f/kmp.js) | 展示预处理表、比较和失配回退；明确 next 与 nextval 的约定，核对重叠匹配。 |
-| ☐ | 表达式有向无环图构建与求值 | 3 | [实现文件](../../../../shared/algorithms/final/f/expression-dag.js) | 展示公共子表达式共享、依赖顺序和缓存结果；核对重复子式与无效依赖。 |
-| ☐ | 关键路径 | 2 | [实现文件](../../../../shared/algorithms/final/f/critical-path.js) | 记录最早、最迟时间、时差和关键边；覆盖多条关键路径及有环输入。 |
+| ☑ | 括号匹配 | 1 | [实现文件](../../../../shared/algorithms/final/f/bracket-matching.js) | 展示入栈、匹配出栈和错误位置；覆盖错配、多余右括号和剩余左括号。 |
+| ☑ | 中缀转后缀 | 2 | [实现文件](../../../../shared/algorithms/final/f/infix-to-postfix.js) | 记录运算符栈与输出序列；覆盖括号、优先级和结合性。 |
+| ☑ | 表达式求值 | 2 | [实现文件](../../../../shared/algorithms/final/f/expression-evaluation.js) | 记录操作数栈和计算结果，明确支持的运算符；覆盖除零和非法表达式。 |
+| ☑ | 朴素模式匹配 | 1 | [实现文件](../../../../shared/algorithms/final/f/naive-string-match.js) | 记录主串、模式串下标及失配后的移动；覆盖空模式、未匹配和重复字符。 |
+| ☑ | KMP | 2 | [实现文件](../../../../shared/algorithms/final/f/kmp.js) | 展示预处理表、比较和失配回退；明确 next 与 nextval 的约定，核对重叠匹配。 |
+| ☑ | 表达式有向无环图构建与求值 | 3 | [实现文件](../../../../shared/algorithms/final/f/expression-dag.js) | 展示公共子表达式共享、依赖顺序和缓存结果；核对重复子式与无效依赖。 |
+| ☑ | 关键路径 | 2 | [实现文件](../../../../shared/algorithms/final/f/critical-path.js) | 记录最早、最迟时间、时差和关键边；覆盖多条关键路径及有环输入。 |
 | | **合计** | **13** | | |
 
 ## 具体步骤
@@ -90,4 +92,4 @@
 
 - [ ] 首个成果提交 PR 并通过联调。
 - [ ] 本组任务分批合并，按验收结果更新进度。
-- [ ] 提交证据入口、遗留问题及交接说明。
+- [x] 提交[证据入口、遗留问题及交接说明](../f-validation.md)。

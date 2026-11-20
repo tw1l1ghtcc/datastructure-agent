@@ -1,3 +1,5 @@
+import { readFInput } from './f-algorithms.js';
+
 function integers(text) {
   if (!text.trim()) return [];
   return text.split(/[,，]/).map(part => {
@@ -9,6 +11,7 @@ function integers(text) {
 export function createDataForm({ message, onChange }) {
   const byId = id => document.getElementById(id);
   const data = byId('c-data'), param = byId('c-param'), queries = byId('c-queries'), target = byId('d-target');
+  const secondary = byId('f-secondary'), mode = byId('f-mode');
   let config = null, second = false, collapsed = false;
   function update() {
     byId('c-fields').hidden = !config || collapsed;
@@ -22,6 +25,7 @@ export function createDataForm({ message, onChange }) {
     byId('bfs-next').hidden = true; byId('bfs-back').hidden = true;
   }
   function readData(includeQueries = true) {
+    if (config.chapter) return readFInput(config, data.value, secondary.value, mode.value);
     const input = { [config.field]: config.field === 'runs' ? (data.value.trim() ? data.value.split(/\r?\n/).map(integers) : []) : integers(data.value) };
     if (config.param) {
       const value = Number(param.value);
@@ -52,12 +56,19 @@ export function createDataForm({ message, onChange }) {
   });
   byId('c-back').addEventListener('click', () => { second=false; update(); message(''); data.focus(); });
   byId('c-edit').addEventListener('click', () => { collapsed=false; update(); message(''); (second ? queries : data).focus(); });
-  for (const field of [data,param,queries,target]) field.addEventListener('input',onChange);
+  for (const field of [data,param,queries,target,secondary]) field.addEventListener('input',onChange);
+  mode.addEventListener('change', onChange);
   return {
     setAlgorithm(next) {
       if (config !== next) {
         config=next; second=false; collapsed=false;
         data.value=''; queries.value=''; target.value='';
+        secondary.value = '';
+        byId('f-secondary-field').hidden = !config?.secondary;
+        byId('f-secondary-label').textContent = config?.secondary?.label ?? '';
+        secondary.placeholder = config?.secondary?.example ?? '';
+        byId('f-mode-field').hidden = !config?.modes;
+        mode.replaceChildren(...(config?.modes ?? []).map(([value, label]) => new Option(label, value)));
         if (config) {
           byId('d-target-field').hidden=!config.singleTarget || config.tree;
           byId('data-query-label').textContent=config.singleTarget ? '第 2 步 · 查询值（可选，只填一个键）' : '第 2 步 · 查询值（可选）';
@@ -74,7 +85,8 @@ export function createDataForm({ message, onChange }) {
       update();
     },
     fillDemo() {
-      data.value=config.example;
+      data.value=config.modeExamples?.[mode.value] ?? config.example;
+      secondary.value = config.secondary?.example ?? '';
       param.value=config.default ?? '';
       queries.value=config.tree ? config.targetExample ?? (config.param ? '6, 7' : '30, 35') : '';
       target.value=config.targetExample ?? '';
@@ -86,6 +98,14 @@ export function createDataForm({ message, onChange }) {
       return readData();
     },
     summarize(input) {
+      if (config.chapter) {
+        const label = config.modes?.find(([value]) => value === input.mode)?.[1];
+        byId('c-summary-text').textContent = config.title + (label ? ' · ' + label : '');
+        collapsed = true;
+        update();
+        byId('c-edit').focus();
+        return;
+      }
       byId('c-summary-text').textContent=config.title+' · '+(config.field==='runs' ? input.runs.length+' 段' : input[config.field].length+' 项输入')+
         (config.param ? ' · '+config.paramLabel+' '+input[config.param] : '')+
         (config.singleTarget ? (input.target===undefined ? ' · 未设置查询' : ' · 查询 '+input.target) : config.tree ? ' · '+input.queries.length+' 个查询' : '');

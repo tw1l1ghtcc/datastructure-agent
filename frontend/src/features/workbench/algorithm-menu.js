@@ -2,11 +2,15 @@ import { gAlgorithm, gAlgorithmIds } from './g-algorithms.js';
 import { dAlgorithm, dAlgorithmIds } from './d-algorithms.js';
 import { cAlgorithm, cAlgorithmIds } from './c-algorithms.js';
 import { graphAlgorithm, graphAlgorithmIds } from './graph-algorithms.js';
+import { fAlgorithm, fAlgorithmIds } from './f-algorithms.js';
 import { plusMenuChapters } from '../visualization/ext/plus-bridge.js';
 
+const fOptions = chapter => fAlgorithmIds.filter(id => fAlgorithm(id).chapter === chapter).map(id => [id, fAlgorithm(id).title]);
 const chapters = [
+  ['第三章 · 栈与队列', fOptions(3)],
+  ['第四章 · 串', fOptions(4)],
   ['第五章 · 树与二叉树', gAlgorithmIds.filter(id => id !== 'binary-search-tree').map(id => [id, gAlgorithm(id).title])],
-  ['第六章 · 图', graphAlgorithmIds.map(id => [id, graphAlgorithm(id).title])],
+  ['第六章 · 图', [...graphAlgorithmIds.map(id => [id, graphAlgorithm(id).title]), ...fOptions(6)]],
   ['并查集', [['union-find', '并查集']]],
   ['第七章 · 查找', [['binary-search', '二分查找'], ['linear-search', '顺序查找'], ['block-search', '分块查找'], ['binary-search-tree', gAlgorithm('binary-search-tree').title], ...cAlgorithmIds.filter(id => cAlgorithm(id).tree).map(id => [id, cAlgorithm(id).title]), ...dAlgorithmIds.map(id => [id, dAlgorithm(id).title])]],
   ['第八章 · 排序', [

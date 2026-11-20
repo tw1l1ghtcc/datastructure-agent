@@ -16,6 +16,8 @@ export function stateText(value) {
   if (value === null || value === undefined) return '—';
   if (Array.isArray(value)) return value.length ? value.map(item => Array.isArray(item) ? '[' + stateText(item) + ']' : stateText(item)).join('、') : '空';
   if (typeof value === 'object') {
+    if (typeof value.text === 'string' && Number.isInteger(value.index)) return value.text;
+    if (typeof value.char === 'string' && Number.isInteger(value.i)) return value.char + '（' + value.i + '）';
     if (Object.hasOwn(value,'value')) return value.value + '（原下标 ' + value.index + '）';
     return JSON.stringify(value);
   }

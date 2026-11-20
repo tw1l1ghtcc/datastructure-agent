@@ -108,7 +108,7 @@ export function layout(layer, rect, env = {}) {
     }
     return false;
   };
-  const drawLink = (fromId, toId, label) => {
+  const drawLink = (fromId, toId, link) => {
     const a = geo.get(fromId);
     const b = geo.get(toId);
     if (!a || !b || fromId === toId) return;
@@ -142,10 +142,10 @@ export function layout(layer, rect, env = {}) {
     let pts = candidates.find((route) => !crossesAny(route, obstacles)) || candidates[0];
     if (!pts) return;
 
-    prims.push(P.poly(`link-${fromId}-${toId}`, pts, { stroke: LINK.LinkNodeLine, sw: 1.6, arrow: 'end', z: 1 }));
+    prims.push(P.poly(`link-${fromId}-${toId}`, pts, { stroke: link?.stroke ?? LINK.LinkNodeLine, dash: link?.dash, sw: 1.6, arrow: 'end', z: 1 }));
     const mid = pts[pts.length - 1];
     prims.push(P.circle(`dot-${fromId}-${toId}`, mid[0], mid[1], 3.2, { fill: LINK.LinkDot, z: 2 }));
-    if (label) prims.push(P.text(`ll-${fromId}-${toId}`, (pts[0][0] + mid[0]) / 2, (pts[0][1] + mid[1]) / 2 - 9, label, { size: 10, fill: UI.textMuted }));
+    if (link?.label) prims.push(P.text(`ll-${fromId}-${toId}`, (pts[0][0] + mid[0]) / 2, (pts[0][1] + mid[1]) / 2 - 9, link.label, { size: 10, fill: UI.textMuted }));
   };
 
   const drawNode = (n) => {
@@ -154,6 +154,9 @@ export function layout(layer, rect, env = {}) {
     const s = styleOf(st);
     const fill = n.fill || (st === 'idle' ? LINK.LinkNode : s.fill);
     const stroke = st === 'idle' ? LINK.LinkNodeFrame : s.stroke;
+    const detached = fitViewport && st === 'excluded';
+    const opacity = detached ? 1 : s.opacity;
+    const textColor = detached ? UI.textMuted : st === 'idle' ? LINK.LinkNodeText : s.text;
 
     // 4 条边逐条画（复原"逐边换色"，因此不用 Rectangle）
     const edges = [
@@ -162,25 +165,25 @@ export function layout(layer, rect, env = {}) {
       [g.x + g.w, g.y + g.h, g.x, g.y + g.h],
       [g.x, g.y + g.h, g.x, g.y],
     ];
-    prims.push(P.rect(`nfill-${n.id}`, g.x, g.y, g.w, g.h, { r: round, fill, stroke: 'none', opacity: s.opacity, z: 1 }));
-    edges.forEach((e, i) => prims.push(P.line(`ne-${n.id}-${i}`, e[0], e[1], e[2], e[3], { stroke, sw: borderWidth(st), opacity: s.opacity, z: 2 })));
+    prims.push(P.rect(`nfill-${n.id}`, g.x, g.y, g.w, g.h, { r: round, fill, stroke: 'none', opacity, z: 1 }));
+    edges.forEach((e, i) => prims.push(P.line(`ne-${n.id}-${i}`, e[0], e[1], e[2], e[3], { stroke, sw: borderWidth(st), opacity, z: 2 })));
 
     // 数据域 / 指针域 分隔（有 fields 时按字段表切分，复原"字段表驱动"）
     const fields = n.fields || data.fields;
     if (fields && fields.length >= 2) {
       const fw = g.w / fields.length;
       fields.forEach((f, i) => {
-        if (i > 0) prims.push(P.line(`nf-${n.id}-${i}`, g.x + fw * i, g.y, g.x + fw * i, g.y + g.h, { stroke, sw: 1, opacity: s.opacity, z: 2 }));
+        if (i > 0) prims.push(P.line(`nf-${n.id}-${i}`, g.x + fw * i, g.y, g.x + fw * i, g.y + g.h, { stroke, sw: 1, opacity, z: 2 }));
         const val = n[f.name] ?? (f.name === 'next' ? (n.next ?? '∧') : n.value);
-        prims.push(P.text(`nft-${n.id}-${f.name}`, g.x + fw * (i + 0.5), g.y + g.h / 2, String(val), { size: 12, fill: st === 'idle' ? LINK.LinkNodeText : s.text, opacity: s.opacity }));
+        prims.push(P.text(`nft-${n.id}-${f.name}`, g.x + fw * (i + 0.5), g.y + g.h / 2, String(val), { size: 12, fill: textColor, opacity }));
       });
     } else {
       const value = String(n.value ?? n.label ?? n.id);
       const size = fitViewport ? Math.max(5, Math.min(20, nodeH * 0.34, (nodeW - 7) / (value.length * 0.63))) : 14;
       prims.push(P.text(`nv-${n.id}`, g.x + g.w / 2, g.y + g.h * (fitViewport ? 0.38 : 0.5), value,
-        { size, fill: st === 'idle' ? LINK.LinkNodeText : s.text, opacity: s.opacity }));
+        { size, fill: textColor, opacity }));
       if (fitViewport && n.label) prims.push(P.text(`nid-${n.id}`, g.x + g.w / 2, g.y + g.h * 0.76, n.label,
-        { size: Math.min(12, nodeH * 0.27, (nodeW - 4) / (n.label.length * 0.63)), fill: st === 'idle' ? UI.textMuted : s.text }));
+        { size: Math.min(12, nodeH * 0.27, (nodeW - 4) / (n.label.length * 0.63)), fill: detached || st === 'idle' ? UI.textMuted : s.text }));
     }
     if (n.badge) prims.push(P.text(`nb-${n.id}`, g.x + g.w / 2, g.y - 10, n.badge, { size: 10, fill: UI.textMuted }));
   };
@@ -189,7 +192,7 @@ export function layout(layer, rect, env = {}) {
     for (const n of list) {
       const link = (data.links || []).find((l) => l.from === n.id);
       const tgt = link ? link.to : n.next;
-      if (tgt) drawLink(n.id, tgt, link && link.label);
+      if (tgt) drawLink(n.id, tgt, link);
     }
     for (const n of list) drawNode(n);
   } else {
@@ -197,7 +200,7 @@ export function layout(layer, rect, env = {}) {
     for (const n of list) {
       const link = (data.links || []).find((l) => l.from === n.id);
       const tgt = link ? link.to : n.next;
-      if (tgt) drawLink(n.id, tgt, link && link.label);
+      if (tgt) drawLink(n.id, tgt, link);
     }
   }
 

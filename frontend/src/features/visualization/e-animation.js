@@ -3,8 +3,16 @@ import { createEStateTable } from './e-state-table.js';
 import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
-export function usesFullECanvas(algorithm) {
-  return algorithm === 'array-list-reverse' || algorithm === 'singly-linked-list-insert' || algorithm === 'kth-from-end';
+const fullCanvasLabels = new Map([
+  ['array-list-reverse', ['顺序表', '顺序表动画，i 和 j 标记交换位置']],
+  ['singly-linked-list-insert', ['链表与新结点', '链表动画，显示新结点和 next 指向']],
+  ['singly-linked-list-delete', ['链表与脱链结点', '链表动画，显示删除后改接的 next 和已脱链的结点']],
+  ['singly-linked-list-reverse', ['链表与逆置指针', '链表动画，显示前驱、当前结点和原后继']],
+  ['kth-from-end', ['链表与快慢指针', '链表动画，显示快慢指针和找到的结点']],
+]);
+
+export function fullECanvasLabels(algorithm) {
+  return fullCanvasLabels.get(algorithm);
 }
 
 function reverseFrame(step) {
@@ -40,29 +48,25 @@ const listId = id => id == null ? null : 'n' + id;
 function listFrame(step, previous, fitViewport) {
   const v = step.variables;
   const inserting = step.algorithm === 'singly-linked-list-insert';
+  const deleting = step.algorithm === 'singly-linked-list-delete';
+  const reversing = step.algorithm === 'singly-linked-list-reverse';
   const finding = step.algorithm === 'kth-from-end';
   const chain = linkedChain(v);
   const onChain = new Set(chain.map(node => node.id));
   const oldLinks = new Map(previous?.variables.nodes.map(node => [node.id, node.next]));
-  const pointers = [[v.prevId, '前驱'], [v.currId, '当前'], [v.nextId, '原后继'], [v.fastId, '快'], [v.slowId, '慢']];
   const otherChain = linkedChain({ nodes: v.nodes, headId: v.nextId }).filter(node => !onChain.has(node.id));
   const placed = new Set([...onChain, ...otherChain.map(node => node.id)]);
   const ordered = [...chain, ...otherChain, ...v.nodes.filter(node => !placed.has(node.id))];
-  const detached = inserting ? ordered.find(node => !onChain.has(node.id)) : null;
+  const detached = inserting || deleting ? ordered.find(node => !onChain.has(node.id)) : null;
   const previousChain = inserting && previous ? new Set(linkedChain(previous.variables).map(node => node.id)) : null;
   const joined = previousChain ? chain.find(node => !previousChain.has(node.id)) : null;
   const result = finding ? step.result : null;
   const nodes = ordered.map(node => ({
     id: listId(node.id), value: node.value, next: listId(node.next),
-    ...(fitViewport ? { label: '#' + node.id + (inserting && node.next === null ? ' · NULL' : '') }
-      : { badge: pointers.filter(([id]) => id === node.id).map(([, label]) => label).join('／') }),
+    label: '#' + node.id + (!finding && node.next === null ? ' · NULL' : ''),
   }));
   const changed = previous ? v.nodes.filter(node => !oldLinks.has(node.id) || node.next !== oldLinks.get(node.id)) : [];
   const nodeW = Math.max(72, ...nodes.map(node => String(node.value).length * 9 + 14));
-  const gap = 34;
-  const perRow = Math.min(6, Math.max(2, nodes.length));
-  const canvasWidth = 76 + perRow * nodeW + (perRow - 1) * gap;
-  const canvasHeight = Math.max(168, 54 + Math.ceil(nodes.length / perRow) * 92);
   let name = '';
   const nodePointers = [];
   if (finding) {
@@ -70,6 +74,15 @@ function listFrame(step, previous, fitViewport) {
     else if (v.fastId === null) name = '快指针已越过链尾（fast = NULL）';
     if (v.fastId != null) nodePointers.push({ id: 'fast', node: listId(v.fastId), label: '快 fast' });
     if (v.slowId != null) nodePointers.push({ id: 'slow', node: listId(v.slowId), label: '慢 slow' });
+  } else if (deleting && detached) {
+    name = `结点 #${detached.id} 已脱链` + (detached.next == null ? '' : '，虚线为它原有的 next');
+    nodePointers.push({ id: 'removed', node: listId(detached.id), label: '已脱链' });
+  } else if (reversing && v.currId != null) {
+    const target = v.prevId == null ? 'NULL' : '#' + v.prevId;
+    name = `#${v.currId} 的 next 改为 ${target}` + (v.nextId == null ? '，原后继为 NULL' : `，待处理链从 #${v.nextId} 开始`);
+    if (v.prevId != null) nodePointers.push({ id: 'prev', node: listId(v.prevId), label: '前驱 prev' });
+    nodePointers.push({ id: 'curr', node: listId(v.currId), label: '当前 curr' });
+    if (v.nextId != null) nodePointers.push({ id: 'next', node: listId(v.nextId), label: '原后继 next' });
   } else if (detached) {
     name = `新结点 #${detached.id} 尚未接入链表`;
     nodePointers.push({ id: 'new', node: listId(detached.id), label: '链外' });
@@ -78,17 +91,21 @@ function listFrame(step, previous, fitViewport) {
     nodePointers.push({ id: 'new', node: listId(joined.id), label: '新结点' });
   }
   const highlighted = result?.nodeId ?? joined?.id;
+  const links = deleting && detached?.next != null ? [{
+    from: listId(detached.id), to: listId(detached.next), dash: [5, 4], stroke: '#8796ab',
+  }] : [];
   return [linkLayer({
-    id: 'e-list', title: finding ? '链表与快慢指针' : '链表节点与 next 指针', name, nodes,
+    id: 'e-list', title: finding ? '链表与快慢指针' : '链表节点与 next 指针', name, nodes, links,
     head: listId(v.headId), order: nodes.map(node => node.id),
     roles: {
       swap: [v.currId, v.fastId].map(listId).filter(Boolean),
       focus2: [result?.nodeId === v.slowId ? null : v.slowId, v.prevId].map(listId).filter(Boolean),
       added: changed.map(node => listId(node.id)),
+      excluded: deleting && detached ? [listId(detached.id)] : [],
       done: highlighted == null ? [] : [listId(highlighted)],
       pointers: nodePointers,
     },
-    props: { canvasWidth, canvasHeight, nodeW, nodeH: 36, gap, fitViewport, showTailMarker: !inserting },
+    props: { nodeW, fitViewport: true, showTailMarker: finding },
   })];
 }
 
@@ -146,12 +163,12 @@ function countingFrame(run, step, init) {
 }
 
 export function createEAnimation(host, explainHost, run, config) {
-  const fillViewport = usesFullECanvas(run.algorithm);
+  const fillViewport = fullCanvasLabels.has(run.algorithm);
   const init = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
   const previous = step => run.steps[step.stepIndex - 1];
   const frames = {
     array: fillViewport ? reverseFrame : arrayFrame,
-    linked: step => listFrame(step, previous(step), fillViewport),
+    linked: step => listFrame(step, previous(step)),
     matrix: matrixFrame,
     radix: step => radixFrame(step, previous(step)),
     counting: step => countingFrame(run, step, init),

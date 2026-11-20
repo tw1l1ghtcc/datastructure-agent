@@ -15,8 +15,8 @@ const examples = [
   ['array-list-reverse', [5, 4, 3, 2, 1]],
   ['array-list-delete-range', [1, 5], '逻辑长度 2'],
   ['singly-linked-list-insert', [1, 2, 3]],
-  ['singly-linked-list-delete', [2, 3], '结点与链接'],
-  ['singly-linked-list-reverse', [6, 4, 2], '结点与链接'],
+  ['singly-linked-list-delete', [2, 3]],
+  ['singly-linked-list-reverse', [6, 4, 2]],
   ['kth-from-end', { nodeId: 2, value: 1 }],
   ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }, '转置输出'],
   ['radix-sort', [3, 10, 21, 21], '排序结果'],
@@ -140,6 +140,23 @@ try {
       assert.equal(await svg.locator('[data-avc-key="link-n0-n2"]').count(), 1);
       assert.equal(await svg.locator('[data-avc-key="link-n2-n1"]').count(), 1);
     }
+    if (algorithm === 'singly-linked-list-delete') {
+      const svg = layer(page, 'e-list');
+      assert.equal(await svg.locator('[data-avc-key="ptr-removed"]').textContent(), '已脱链');
+      assert.equal(await svg.locator('[data-avc-key="link-n0-n1"] polyline').first().getAttribute('stroke-dasharray'), '5 4');
+      assert.equal(await svg.locator('[data-avc-key="link-n1-n2"] polyline').first().getAttribute('stroke-dasharray'), null);
+    }
+    if (algorithm === 'singly-linked-list-reverse') {
+      const svg = layer(page, 'e-list');
+      assert.equal(await svg.locator('[data-avc-key="nid-n0"]').textContent(), '#0 · NULL');
+      assert.equal(await svg.locator('[data-avc-key="ptr-curr"]').textContent(), '当前 curr');
+      assert.equal(await svg.locator('[data-avc-key="ptr-next"]').textContent(), '原后继 next');
+      await page.click('#nextBtn');
+      await assertStep(page, run, 2);
+      assert.equal(await svg.locator('[data-avc-key="ptr-prev"]').textContent(), '前驱 prev');
+      assert.equal(await svg.locator('[data-avc-key="link-n1-n0"]').count(), 1);
+      assert.equal(await svg.locator('[data-avc-key="link-n0-n1"]').count(), 0);
+    }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
     if (algorithm === 'kth-from-end') {
@@ -230,6 +247,23 @@ try {
   }), '插入后 65 个结点都显示在画布内');
   assert.deepEqual(tailInsert.result, [...fullList, 0]);
 
+  await selectWorkbenchAlgorithm(page, 'singly-linked-list-delete');
+  for (const [input, pos, expected] of [[[0], 0, []], [[7, 7, 7], 1, [7, 7]], [[1, 2, 3], 2, [1, 2]]]) {
+    await page.fill('#e-data', input.join(','));
+    await page.fill('#e-pos', String(pos));
+    const run = await start(page, 'singly-linked-list-delete');
+    await assertFullCanvas(page, 'e-list');
+    await page.click('#nextBtn');
+    await assertStep(page, run, 1);
+    const svg = layer(page, 'e-list');
+    assert.match(await svg.locator('[data-avc-key="name"]').textContent(), new RegExp(`结点 #${pos} 已脱链`));
+    if (!expected.length) assert.equal(await svg.locator('[data-avc-key="null-head"]').textContent(), 'head=∧');
+    if (pos === 1) assert.equal(await svg.locator('[data-avc-key="link-n0-n2"]').count(), 1);
+    if (pos === 2) assert.equal(await svg.locator('[data-avc-key="nid-n1"]').textContent(), '#1 · NULL');
+    assert.deepEqual(run.result, expected);
+    await page.click('#e-edit');
+  }
+
   await selectWorkbenchAlgorithm(page, 'sparse-matrix-transpose');
   await page.fill('#e-rows', '1');
   await page.fill('#e-cols', '64');
@@ -309,25 +343,26 @@ try {
   await page.fill('#e-data', '2147483647, 1000000000, 0');
   assert.deepEqual((await start(page, 'radix-sort')).result, [0, 1000000000, 2147483647]);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'mobile layout fits viewport');
+  await page.setViewportSize({ width: 1120, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await selectWorkbenchAlgorithm(page, 'singly-linked-list-reverse');
   const keys = Array.from({ length: 64 }, (_, index) => index + 1000);
   await page.fill('#e-data', keys.join(', '));
   const longList = await start(page, 'singly-linked-list-reverse');
+  await assertFullCanvas(page, 'e-list');
+  const svg = layer(page, 'e-list');
+  await page.click('#nextBtn');
+  await assertStep(page, longList, 1);
+  assert.equal(await svg.locator('[data-avc-key^="nid-"]').count(), 64);
+  assert.equal(await svg.locator('[data-avc-key="ptr-next"]').textContent(), '原后继 next');
   await page.locator('[data-t="last"]').click();
   assert.deepEqual(longList.result, [...keys].reverse());
   await assertStep(page, longList, longList.steps.length - 1);
-  const svg = layer(page, 'e-list');
   assert.ok(await svg.evaluate(element => {
     const box = element.querySelector('.avc-layer').getBBox();
     const { width, height } = element.viewBox.baseVal;
     return box.x >= -1 && box.y >= -1 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1;
   }), '64-node list fits its canvas');
-  assert.ok(await page.locator('[data-viz-body]').evaluate(element => {
-    element.scrollLeft = element.scrollWidth;
-    element.scrollTop = element.scrollHeight;
-    return element.scrollLeft > 0 && element.scrollTop > 0 && document.documentElement.scrollWidth <= innerWidth;
-  }), 'list and state tables scroll inside the workbench');
 
   assert.deepEqual(errors, []);
   console.log('E package workbench acceptance passed. Counting sort boundary: ' + wide.steps.length + ' steps.');

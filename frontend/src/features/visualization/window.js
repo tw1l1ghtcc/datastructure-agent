@@ -7,7 +7,7 @@ import { createDAnimation } from './d-animation.js';
 import { gAlgorithm } from '../workbench/g-algorithms.js';
 import { createGAnimation } from './g-animation.js';
 import { eAlgorithm } from '../workbench/e-algorithms.js';
-import { createEAnimation, usesFullECanvas } from './e-animation.js';
+import { createEAnimation, fullECanvasLabels } from './e-animation.js';
 import { fAlgorithm } from '../workbench/f-algorithms.js';
 import { createFAnimation } from './f-animation.js';
 import { cAlgorithm } from '../workbench/c-algorithms.js';
@@ -96,8 +96,8 @@ export function createVizWindow(host, {
   const e = eAlgorithm(algorithm);
   const d = dAlgorithm(algorithm);
   const traceView = e ?? f ?? g ?? c ?? d;
-  const traceCanvas = usesFullECanvas(algorithm);
-  const scrollTrace = traceView && !traceCanvas;
+  const traceCanvasLabels = fullECanvasLabels(algorithm);
+  const scrollTrace = traceView && !traceCanvasLabels;
   const unionFind = algorithm === 'union-find';
   /* 合并（PR #66 §1）：主分支把"排序"扩成 8 种，我们的 plus 示例也要用同一套窗口 */
   const sorting = SORT_ALGORITHMS.includes(algorithm);
@@ -119,7 +119,7 @@ export function createVizWindow(host, {
   const graph = graphAlgorithm(algorithm);
   const heapSort = algorithm === 'heap-sort';
   const splitSort = heapSort || algorithm === 'merge-sort';
-  const fullCanvas = Boolean(graph || unionFind || splitSort || traceCanvas);
+  const fullCanvas = Boolean(graph || unionFind || splitSort || traceCanvasLabels);
   const tableLabel = graphTableLabel(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
@@ -132,14 +132,11 @@ export function createVizWindow(host, {
     root.querySelector('.win-sub').textContent = traceView.title + ' · 执行过程';
     root.querySelector('.vh-sub').textContent = traceView.title;
     root.querySelector('.viewport-legend').hidden = true;
-    if (traceCanvas) {
-      const arrayReverse = algorithm === 'array-list-reverse';
-      const listInsert = algorithm === 'singly-linked-list-insert';
+    if (traceCanvasLabels) {
+      const [title, label] = traceCanvasLabels;
       root.dataset.traceCanvas = 'true';
-      root.querySelector('.vh-title').textContent = arrayReverse ? '顺序表' : listInsert ? '链表与新结点' : '链表与快慢指针';
-      root.querySelector('[data-viz-body]').setAttribute('aria-label', arrayReverse
-        ? '顺序表动画，i 和 j 标记交换位置' : listInsert
-          ? '链表动画，显示新结点和 next 指向' : '链表动画，显示快慢指针和找到的结点');
+      root.querySelector('.vh-title').textContent = title;
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', label);
     } else {
       root.dataset.traceAnimation = 'true';
       root.dataset.tableView = 'true';

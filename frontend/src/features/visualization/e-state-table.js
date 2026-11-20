@@ -1,5 +1,5 @@
 import { createStateTable as table } from './state-table.js';
-import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
+import { countingSnapshot } from '../workbench/e-state.js';
 
 function highlight(tableElement, indices) {
   for (const index of indices) {
@@ -17,26 +17,6 @@ function arrayTable(step) {
   const { length, src, dst } = step.variables;
   const rows = step.array.map((value, index) => [index, value, index < length ? '有效' : '超出逻辑长度']);
   return [highlight(table('顺序表 · 逻辑长度 ' + length, ['下标', '存储值', '逻辑状态'], rows), [src, dst])];
-}
-
-function listTables(step, previous) {
-  const { nodes, headId, prevId, currId, nextId, fastId, slowId } = step.variables;
-  const chain = linkedChain(step.variables);
-  const chainIds = new Set(chain.map(node => node.id));
-  const previousLinks = new Map(previous?.variables.nodes.map(node => [node.id, node.next]));
-  const pointers = [[headId, '表头'], [prevId, '前驱'], [currId, '当前'], [nextId, '原后继'], [fastId, '快'], [slowId, '慢']];
-  const rows = nodes.map(({ id, value, next }) => {
-    const labels = pointers.filter(([target]) => target === id).map(([, name]) => name);
-    return [id, value, next, labels.join('、') || '—', chainIds.has(id) ? '从表头可达' : '链外'];
-  });
-  const changed = nodes.flatMap(({ id, next }, index) => {
-    const linkChanged = previous && (!previousLinks.has(id) || previousLinks.get(id) !== next);
-    const target = pointers.slice(1).some(([target]) => target === id);
-    const headChanged = previous && id === headId && previous.variables.headId !== headId;
-    return linkChanged || target || headChanged ? [index] : [];
-  });
-  return [table('当前链表（从表头开始）', ['结点编号', '值'], chain.map(node => [node.id, node.value])),
-    highlight(table('结点与链接', ['编号', '值', 'next 编号', '指针', '可达状态'], rows), changed)];
 }
 
 function tripleTable(title, triples, index) {
@@ -93,7 +73,6 @@ export function createEStateTable(run, config) {
   const columnCounts = config.view === 'matrix' ? run.steps.find(step => step.event === 'start_positions') : null;
   const renderers = {
     array: arrayTable,
-    linked: step => listTables(step, run.steps[step.stepIndex - 1]),
     matrix: step => matrixTables(step, columnCounts),
     radix: radixTables,
     counting: step => countingTables(run, step, countInit),

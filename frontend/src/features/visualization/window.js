@@ -119,7 +119,8 @@ export function createVizWindow(host, {
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
   root.innerHTML = TEMPLATE;
-  if (graph || unionFind) root.dataset.graphView = fullGraphCanvas ? 'canvas' : unionFind || algorithm === 'floyd' ? 'table' : 'graph';
+  if (unionFind) root.dataset.graphView = 'forest';
+  else if (graph) root.dataset.graphView = fullGraphCanvas ? 'canvas' : algorithm === 'floyd' ? 'table' : 'graph';
   if (traceView) {
     root.dataset.traceAnimation = 'true';
     root.dataset.tableView = 'true';
@@ -136,6 +137,8 @@ export function createVizWindow(host, {
     root.querySelector('.vh-title').textContent = '森林与父节点表';
     root.querySelector('.vh-sub').textContent = '按步骤更新';
     root.querySelector('.viewport-legend').hidden = true;
+    root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧父节点表，右侧父指针森林');
+    root.querySelector('.viewport-hint').textContent = '右侧动画：拖拽平移 · Ctrl + 滚轮缩放 · Home 复位';
   }
   if (graph) {
     root.querySelector('.win-sub').textContent = graph.name + ' · 图视图';
@@ -209,16 +212,20 @@ export function createVizWindow(host, {
   let currentRun = run;
   let state = { stepIndex: 0, total: 0, playing: false, canPrev: false, canNext: false };
 
+  const cameraViewport = () => unionFind ? scene.querySelector('.b-forest-viewport') : body;
+
   function applyView() {
-    scene.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+    const target = unionFind ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
+    if (target) target.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   }
 
   function warnIfCanvasTiny() {
-    const w = Math.round(body.clientWidth);
-    const h = Math.round(body.clientHeight);
+    const surface = cameraViewport() ?? body;
+    const w = Math.round(surface.clientWidth);
+    const h = Math.round(surface.clientHeight);
     const tiny = w < 240 || h < 170;
     warn.hidden = !tiny;
-    if (tiny) warn.textContent = graph ? '可视区较小，可以点「全屏」放大查看。' : `可视区只有 ${w}×${h}px，数组会被压得很小：可以点「全屏」放大查看。`;
+    if (tiny) warn.textContent = graph || unionFind ? '可视区较小，可以点「全屏」放大查看。' : `可视区只有 ${w}×${h}px，数组会被压得很小：可以点「全屏」放大查看。`;
   }
 
   function fitView() {
@@ -250,6 +257,7 @@ export function createVizWindow(host, {
   let panStart = { x: 0, y: 0 };
   body.addEventListener('pointerdown', (event) => {
     if (traceView || event.button !== 0 || event.target.closest?.('button, select, input, .bsviz-explain, .b-animation-data')) return;
+    if (!cameraViewport()?.contains(event.target)) return;
     body.focus({preventScroll:true});
     panning = true;
     panStart = { x: event.clientX - view.x, y: event.clientY - view.y };
@@ -268,8 +276,10 @@ export function createVizWindow(host, {
   body.addEventListener('pointercancel', stopPan);
   body.addEventListener('wheel', (event) => {
     if (traceView || !event.ctrlKey || event.deltaY === 0) return;
+    const surface = cameraViewport();
+    if (!surface?.contains(event.target)) return;
     event.preventDefault();
-    const rect = body.getBoundingClientRect();
+    const rect = surface.getBoundingClientRect();
     const cx = event.clientX - rect.left - rect.width / 2;
     const cy = event.clientY - rect.top - rect.height / 2;
     const next = Math.min(view.max, Math.max(view.min, view.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));

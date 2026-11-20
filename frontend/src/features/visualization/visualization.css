@@ -481,6 +481,33 @@
 .b-animation-data :is(th, td) { padding: 4px 6px; overflow-wrap: anywhere; }
 .b-animation-data td[data-active="via"] { background: #e8e9fb; }
 .b-animation-data td[data-active="target"] { background: #ffedc7; font-weight: 650; }
+.b-animation-forest {
+  display: grid;
+  grid-template-columns: clamp(112px, 29%, 260px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+}
+.b-animation-forest .b-animation-data {
+  min-width: 0;
+  max-height: none;
+  padding: 0 8px 8px;
+  border-right: 1px solid var(--bl-line);
+  background: #f8faff;
+}
+.b-animation-forest .uf-table { table-layout: fixed; }
+.b-animation-forest .uf-table th {
+  position: sticky;
+  top: 0;
+  background: #eef2fa;
+}
+.b-animation-forest .uf-table th:last-child { width: 20%; }
+.b-forest-viewport {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
 .c-animation { display: grid; gap: 10px; justify-items: start; }
 .c-animation-stage.plus-viz { min-height: 0; height: auto; overflow: visible; }
 .c-animation-stage .canvas-card header span { display: none; }

@@ -5,7 +5,7 @@ import { describeGraphStep } from './graph-explanation.js';
 import { createUnionFindTable } from './union-find-table.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const FULL_GRAPH_ALGORITHMS = new Set(['bfs', 'dfs', 'prim', 'kruskal', 'dijkstra']);
+const FULL_GRAPH_ALGORITHMS = new Set(['bfs', 'dfs', 'prim', 'kruskal', 'dijkstra', 'union-find']);
 
 export function usesFullGraphCanvas(algorithm) {
   return FULL_GRAPH_ALGORITHMS.has(algorithm);
@@ -142,7 +142,7 @@ function graphFrame(run, graph, step, viewportSize) {
   });
 }
 
-function forestFrame(vertices, step, previous) {
+function forestFrame(vertices, step, previous, viewportSize) {
   const { parent, currentOp, findPath } = step.variables;
   const changed = previous ? vertices.filter(({ id }) => parent[id] !== previous.variables.parent[id]).map(({ id }) => id) : [];
   const pathEdges = new Map((findPath ?? []).slice(1).map((to, index) => [findPath[index], to]));
@@ -150,9 +150,10 @@ function forestFrame(vertices, step, previous) {
     from: id, to: parent[id],
     state: changed.includes(id) ? 'active' : pathEdges.get(id) === parent[id] ? 'path' : 'tree',
   }]);
+  const layout = viewportGraphLayout(vertices, viewportSize);
   return graphLayer({
-    id: 'b-forest', title: '父指针森林 · 箭头指向父节点', nodes: vertices, edges, directed: true, weighted: false,
-    props: { routedEdges: true },
+    id: 'b-forest', title: '父指针森林 · 箭头指向父节点', nodes: layout.nodes, edges, directed: true, weighted: false,
+    props: { routedEdges: true, ...layout.style },
     roles: {
       done: vertices.filter(({ id }) => parent[id] === id).map(({ id }) => id),
       focus1: changed,
@@ -215,15 +216,23 @@ function installVertexTitles(host, vertices) {
 export function createBAnimation(host, run, explainHost) {
   const graph = run.graph ? prepareGraph(run) : null;
   const vertices = graph?.vertices ?? vertexLayout(run.input.elements);
-  const fillViewport = Boolean(graph && usesFullGraphCanvas(run.algorithm));
+  const fillViewport = usesFullGraphCanvas(run.algorithm);
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-graph';
   element.className = 'b-animation';
   element.classList.toggle('b-animation-full', fillViewport);
   element.classList.toggle('b-animation-wide', !fillViewport && vertices.length > 12);
+  element.classList.toggle('b-animation-forest', !graph);
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz b-animation-stage';
-  element.append(canvas);
+  if (graph) {
+    element.append(canvas);
+  } else {
+    const graphPane = document.createElement('div');
+    graphPane.className = 'b-forest-viewport';
+    graphPane.append(canvas);
+    element.append(graphPane);
+  }
   host.append(element);
   const stage = createStage(canvas, { fillViewport });
   const stateTable = !graph ? createUnionFindTable(run.input)
@@ -236,7 +245,8 @@ export function createBAnimation(host, run, explainHost) {
     data.setAttribute('role', 'region');
     data.setAttribute('aria-label', graph ? '距离矩阵' : '父节点与秩');
     data.append(stateTable.element);
-    element.append(data);
+    if (graph) element.append(data);
+    else element.prepend(data);
   }
   const { explain, caption, status } = createExplanationPanel();
   explainHost.replaceChildren(explain);
@@ -245,7 +255,7 @@ export function createBAnimation(host, run, explainHost) {
   function draw(step, animate = true) {
     const viewportSize = fillViewport ? { width: canvas.clientWidth, height: canvas.clientHeight } : null;
     const previous = run.steps[step.stepIndex - 1];
-    const frame = graph ? graphFrame(run, graph, step, viewportSize) : forestFrame(vertices, step, previous);
+    const frame = graph ? graphFrame(run, graph, step, viewportSize) : forestFrame(vertices, step, previous, viewportSize);
     stage.render([frame], { animate });
     installVertexTitles(canvas, vertices);
     const svg = canvas.querySelector('.avc-svg');

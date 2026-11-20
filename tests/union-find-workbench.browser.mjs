@@ -10,6 +10,29 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   env: { ...process.env, PORT: '0', HOST: '127.0.0.1', AGENT_MOCK: 'true', RATE_LIMIT: 'false' },
   windowsHide: true
 });
+
+async function assertSplitLayout(page) {
+  await page.waitForFunction(() => {
+    const graph = document.querySelector('.b-forest-viewport');
+    const svg = graph?.querySelector('.b-animation-stage > svg');
+    if (!svg) return false;
+    const { width, height } = svg.viewBox.baseVal;
+    return width > 0 && height > 0 && width === graph.clientWidth && height === graph.clientHeight;
+  });
+  return page.locator('.b-animation-forest').evaluate(layout => {
+    const table = layout.querySelector('.b-animation-data').getBoundingClientRect();
+    const graph = layout.querySelector('.b-forest-viewport').getBoundingClientRect();
+    const workspace = layout.closest('[data-viz-body]').getBoundingClientRect();
+    if (Math.abs(table.right - graph.left) > 1 || graph.width <= table.width ||
+        Math.abs(table.top - graph.top) > 1 || Math.abs(table.height - graph.height) > 1 ||
+        Math.abs(table.width + graph.width - workspace.width) > 1 ||
+        Math.abs(graph.height - workspace.height) > 1) {
+      throw new Error('并查集父节点表和森林图应并排铺满画布，图位于右侧');
+    }
+    return graph.width;
+  });
+}
+
 let browser;
 try {
   const base = await new Promise((resolve, reject) => {
@@ -21,7 +44,7 @@ try {
     });
   });
   browser = await chromium.launch({ channel: process.env.TEST_BROWSER_CHANNEL || 'msedge', headless: true });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base + '/#workbench?algorithm=union-find');
@@ -44,6 +67,7 @@ try {
   const links = () => forest.locator('[data-avc-key^="e-"]').evaluateAll(edges =>
     edges.map(edge => edge.dataset.avcKey).sort());
   await forest.waitFor();
+  await assertSplitLayout(page);
   assert.deepEqual(await links(), []);
   assert.equal(await rows.count(), 4);
   await page.click('[data-t="last"]');
@@ -106,6 +130,60 @@ try {
   await ruler.press('ArrowLeft');
   assert.ok((await links()).includes('e-D-C'));
   assert.ok(!(await links()).includes('e-D-A'));
+
+  await page.setViewportSize({ width: 1120, height: 780 });
+  const normalWidth = await assertSplitLayout(page);
+  const dataPane = page.locator('.b-animation-forest .b-animation-data');
+  const graphPane = page.locator('.b-forest-viewport');
+  const canvas = graphPane.locator('.b-animation-stage');
+  const scale = () => canvas.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).a);
+  const tableBounds = await dataPane.boundingBox();
+  await dataPane.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100 });
+  assert.equal(await scale(), 1);
+  const graphBounds = await graphPane.boundingBox();
+  await graphPane.dispatchEvent('wheel', {
+    ctrlKey: true, deltaY: -100,
+    clientX: graphBounds.x + graphBounds.width / 2, clientY: graphBounds.y + graphBounds.height / 2,
+  });
+  assert.ok(await scale() > 1);
+  assert.deepEqual(await dataPane.boundingBox(), tableBounds);
+  await page.locator('#nextBtn').click();
+  assert.ok(await scale() > 1);
+  await page.locator('[data-viz-view-reset]').click();
+  assert.equal(await scale(), 1);
+  await graphPane.scrollIntoViewIfNeeded();
+  const dragBounds = await graphPane.boundingBox();
+  const dragX = dragBounds.x + dragBounds.width / 2;
+  const dragY = dragBounds.y + dragBounds.height / 2;
+  const tableBeforeDrag = await dataPane.boundingBox();
+  await page.mouse.move(dragX, dragY);
+  await page.mouse.down();
+  await page.mouse.move(dragX + 24, dragY + 16);
+  await page.mouse.up();
+  assert.ok(await canvas.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).e) > 0);
+  assert.deepEqual(await dataPane.boundingBox(), tableBeforeDrag);
+  await page.locator('[data-viz-full]').click();
+  assert.ok(await assertSplitLayout(page) > normalWidth);
+  await page.keyboard.press('Escape');
+  await assertSplitLayout(page);
+
+  await page.click('#uf-edit');
+  await page.click('#uf-back');
+  await page.fill('#uf-elements', ['A', 'B', 'C', 'D', ...Array.from({ length: 26 }, (_, index) => 'N' + (index + 1))].join(', '));
+  await page.click('#uf-next');
+  const largePending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/union-find/runs'));
+  await page.click('#startBtn');
+  assert.equal((await largePending).status(), 200);
+  await page.locator('#uf-edit').waitFor();
+  await assertSplitLayout(page);
+  assert.equal(await rows.count(), 30);
+  assert.equal(await forest.locator('[data-graph-node]').count(), 30);
+  assert.ok(await dataPane.evaluate(pane => {
+    pane.scrollTop = pane.scrollHeight;
+    const header = pane.querySelector('thead th').getBoundingClientRect();
+    return pane.scrollTop > 0 && Math.abs(header.top - pane.getBoundingClientRect().top) <= 1;
+  }), '父节点表可单独滚动，表头随滚动固定');
+  assert.equal(await scale(), 1);
 
   await selectWorkbenchAlgorithm(page, 'binary-search');
   await page.click('#fillDemo');

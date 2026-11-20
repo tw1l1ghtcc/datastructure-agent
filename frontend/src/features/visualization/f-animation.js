@@ -1,5 +1,5 @@
 import { graphLayer, gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
-import { createBracketAnimation } from './f-bracket-animation.js';
+import { createBracketAnimation, createInfixToPostfixAnimation } from './f-sequence-animation.js';
 import { createFStateTable } from './f-state-table.js';
 import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 
@@ -167,9 +167,9 @@ export function createFAnimation(host, explainHost, run, config) {
   const input = run.input;
   const text = Array.from(input.text ?? '', showChar);
   if (run.algorithm === 'bracket-matching') return createBracketAnimation(host, explainHost, run, config, text);
+  if (run.algorithm === 'infix-to-postfix') return createInfixToPostfixAnimation(host, explainHost, run, config);
   const pattern = Array.from(input.pattern ?? '', showChar);
   const frames = {
-    'infix-to-postfix': step => expressionStacks(step.variables),
     'expression-evaluation': step => [
       tail('f-operands', '操作数栈（栈顶在右）', step.variables.stack, true),
       ...expressionStacks(step.variables),

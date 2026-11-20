@@ -12,7 +12,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 });
 const cases = [
   { id: 'bracket-matching', result: true, field: 'matched', conclusion: /括号全部匹配/ },
-  { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], caption: /后缀序列/ },
+  { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], conclusion: /转换完成/ },
   { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/, conclusion: /表达式结果为 -8/ },
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
   { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
@@ -22,7 +22,18 @@ const cases = [
 
 const layer = (page, name) => page.locator('[data-viz-engine="plus-f"] [data-avc-svg="f-' + name + '"]');
 const cells = (page, name) => layer(page, name).locator('[data-avc-key^="gv-"]').allTextContents();
+const indices = (page, name) => layer(page, name).locator('[data-avc-key^="idx-"]').allTextContents();
 const display = value => String(value ?? '—');
+
+async function assertScrolledTo(cell) {
+  const bounds = await cell.evaluate(rect => {
+    const track = rect.closest('.f-sequence-track');
+    const { left, right } = rect.getBoundingClientRect();
+    const viewLeft = track.getBoundingClientRect().left;
+    return { left, right, viewLeft, viewRight: viewLeft + track.clientWidth, scroll: track.scrollLeft };
+  });
+  assert.ok(bounds.scroll > 0 && bounds.left >= bounds.viewLeft && bounds.right <= bounds.viewRight + 1, JSON.stringify(bounds));
+}
 
 async function assertAnimation(page, run, step) {
   const stage = page.locator('[data-viz-engine="plus-f"] .avc-svg');
@@ -31,12 +42,18 @@ async function assertAnimation(page, run, step) {
   const v = step.variables;
   if (step.algorithm === 'bracket-matching') {
     assert.deepEqual(await cells(page, 'brackets'), v.stack.map(item => item.char));
-    assert.deepEqual(await layer(page, 'brackets').locator('[data-avc-key^="idx-"]').allTextContents(),
-      v.stack.map(item => String(item.i)));
+    assert.deepEqual(await indices(page, 'brackets'), v.stack.map(item => String(item.i)));
   }
   if (v.operators) {
-    assert.deepEqual(await cells(page, 'operators'), v.operators.slice(-10).map(token => token.text));
-    assert.deepEqual(await cells(page, 'postfix'), v.output.slice(-10).map(token => token.text));
+    const full = step.algorithm === 'infix-to-postfix';
+    const operators = full ? v.operators : v.operators.slice(-10);
+    const output = full ? v.output : v.output.slice(-10);
+    assert.deepEqual(await cells(page, 'operators'), operators.map(token => token.text));
+    assert.deepEqual(await cells(page, 'postfix'), output.map(token => token.text));
+    if (full) {
+      assert.deepEqual(await indices(page, 'operators'), operators.map(token => String(token.index)));
+      assert.deepEqual(await indices(page, 'postfix'), output.map(token => String(token.index)));
+    }
   }
   if (step.algorithm === 'expression-evaluation') {
     assert.deepEqual(await cells(page, 'operands'), v.stack.slice(-10).map(display));
@@ -113,6 +130,17 @@ try {
     await assertStep(page, run, 0);
     await page.click('#nextBtn');
     await assertStep(page, run, 1);
+    if (id === 'infix-to-postfix') {
+      await page.click('#nextBtn');
+      await page.click('#nextBtn');
+      await assertStep(page, run, 3);
+      assert.deepEqual(await cells(page, 'operators'), ['+']);
+      assert.deepEqual(await cells(page, 'postfix'), ['12']);
+      assert.ok(await page.locator('.f-sequence-animation').evaluate(animation => {
+        const viewport = animation.closest('[data-viz-body]');
+        return animation.getBoundingClientRect().bottom <= viewport.getBoundingClientRect().bottom;
+      }), 'all three rows fit in the desktop demo viewport');
+    }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
     if (caption) assert.match(await stateTables.innerText(), caption, id);
@@ -120,7 +148,9 @@ try {
     assert.equal(await stateTables.locator('caption', { hasText: '运行结果' }).count(), 0, id);
     if (conclusion) assert.match(await explanation.locator('.bsviz-caption').textContent(), conclusion, id);
     if (id === 'infix-to-postfix') {
-      assert.deepEqual(await rows('后缀序列').locator('td:first-child').allTextContents(), result);
+      assert.deepEqual(await cells(page, 'infix'), ['12', '+', '3', '*', '(', '4', '-', '2', ')']);
+      assert.deepEqual(await indices(page, 'infix'), ['0', '2', '3', '4', '5', '6', '7', '8', '9']);
+      assert.deepEqual(await cells(page, 'postfix'), result);
     }
     if (id === 'naive-string-match' || id === 'kmp') {
       assert.equal(await rows('匹配位置').locator('td').textContent(), result.join('、'));
@@ -157,22 +187,41 @@ try {
       assert.equal(await source.locator('[data-avc-key="idx-119"]').textContent(), '119');
       assert.equal(await brackets.locator('[data-avc-key="idx-0"]').textContent(), '2');
       assert.equal(await brackets.locator('[data-avc-key="idx-116"]').textContent(), '119');
-      for (const cell of [source.locator('[data-avc-key="g-119"] rect'), brackets.locator('[data-avc-key="g-116"] rect')]) {
-        const bounds = await cell.evaluate(rect => {
-          const track = rect.closest('.f-bracket-track');
-          const { left, right } = rect.getBoundingClientRect();
-          const viewLeft = track.getBoundingClientRect().left;
-          return { left, right, viewLeft, viewRight: viewLeft + track.clientWidth, scroll: track.scrollLeft };
-        });
-        assert.ok(bounds.scroll > 0 && bounds.left >= bounds.viewLeft && bounds.right <= bounds.viewRight + 1, JSON.stringify(bounds));
-      }
+      await assertScrolledTo(source.locator('[data-avc-key="g-119"] rect'));
+      await assertScrolledTo(brackets.locator('[data-avc-key="g-116"] rect'));
       assert.match(await explanation.locator('.bsviz-caption').textContent(), /左括号尚未闭合/);
       await page.click('#resetBtn');
       await assertStep(page, long, 0);
-      assert.equal(await source.evaluate(svg => svg.closest('.f-bracket-track').scrollLeft), 0);
+      assert.equal(await source.evaluate(svg => svg.closest('.f-sequence-track').scrollLeft), 0);
       assert.ok(await page.getByText('栈为空', { exact: true }).isVisible());
     }
-    console.log(id + ' · Plus 动画、状态表、源码、步骤查询、单步回退、重置和 Mock 问答通过');
+    if (id === 'infix-to-postfix') {
+      const path = '/api/algorithms/infix-to-postfix/runs';
+      const literal = '0000000000000012';
+      const expression = literal + ' + 1'.repeat(14);
+      await page.click('#c-edit');
+      await page.fill('#c-data', expression);
+      const pending = page.waitForResponse(other => other.url().endsWith(path));
+      await page.click('#startBtn');
+      const long = await (await pending).json();
+      await page.click('[data-t="last"]');
+      await assertStep(page, long, long.steps.length - 1);
+      assert.equal((await cells(page, 'postfix')).length, 29);
+      assert.equal(await layer(page, 'infix').locator('[data-avc-key="g-0"] title').textContent(), literal);
+      await assertScrolledTo(layer(page, 'postfix').locator('[data-avc-key="g-28"] rect'));
+
+      await page.click('#c-edit');
+      await page.fill('#c-data', '12 +');
+      const invalidPending = page.waitForResponse(other => other.url().endsWith(path));
+      await page.click('#startBtn');
+      const invalid = await (await invalidPending).json();
+      await page.click('[data-t="last"]');
+      await assertStep(page, invalid, invalid.steps.length - 1);
+      assert.deepEqual(await cells(page, 'infix'), ['12', '+', '末尾']);
+      assert.deepEqual(await indices(page, 'infix'), ['0', '3', '4']);
+      assert.match(await explanation.locator('.bsviz-caption').textContent(), /缺少操作数/);
+    }
+    console.log(id + ' · Plus 动画、状态显示、源码、步骤查询、单步回退、重置和 Mock 问答通过');
   }
   await page.click('#c-edit');
   await page.fill('#c-data', 'A, B');

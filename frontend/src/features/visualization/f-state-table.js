@@ -20,24 +20,8 @@ function table(caption, headers, rows, selected = () => false) {
   return element;
 }
 
-const characterText = char => ({ ' ': '空格', '\t': '制表符', '\n': '换行', '\r': '回车' })[char] ?? char;
-const characterRows = text => Array.from(text ?? '', (char, index) => [index, characterText(char)]);
 const tokenRows = tokens => tokens.map(({ text, index }) => [text, index]);
 const edgeText = edge => edge[0] + ' → ' + edge[1] + '（' + edge[2] + '）';
-
-function matchTables(input, v, algorithm) {
-  const tables = [
-    table('匹配位置', ['已找到的起点'], [[v.matches]]),
-    table('主串', ['下标', '字符'], characterRows(input.text), index => index === v.i),
-    table('模式串', ['下标', '字符'], characterRows(input.pattern), index => index === (v.k ?? v.j)),
-  ];
-  if (algorithm === 'kmp') {
-    const rows = Array.from(input.pattern, (char, index) => [index, characterText(char), v.prefix[index], v.next[index], v.nextval[index]]);
-    tables.splice(1, 0, table('预处理表 · 当前使用 ' + v.mode, ['下标', '字符', '前缀长度', 'next', 'nextval'], rows,
-      index => index === (v.k ?? v.j)));
-  }
-  return tables;
-}
 
 function graphTables(algorithm, input, v) {
   if (algorithm === 'expression-dag') {
@@ -65,22 +49,19 @@ function outcome(algorithm, value) {
   return value?.value ?? value;
 }
 
-export function createFStateTable(config, algorithm, input) {
+export function createFStateTable(algorithm, input) {
   const element = document.createElement('div');
   element.className = 'c-state-tables';
   return {
     element,
     showStep(step) {
       const v = step.variables;
-      let views;
-      if (config.chapter === 4) {
-        views = matchTables(input, v, algorithm);
-      } else {
-        const stacks = v.operators ? [
+      const views = graphTables(algorithm, input, v);
+      if (v.operators) {
+        views.push(
           table('运算符栈（底到顶）', ['词元', '原下标'], tokenRows(v.operators)),
           table('后缀序列', ['词元', '原下标'], tokenRows(v.output)),
-        ] : [];
-        views = config.chapter === 6 ? [...graphTables(algorithm, input, v), ...stacks] : stacks;
+        );
       }
       if (step.done) views.unshift(table('运行结果', ['结果'], [[outcome(algorithm, step.result)]]));
       element.replaceChildren(...views);

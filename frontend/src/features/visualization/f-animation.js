@@ -1,6 +1,6 @@
 import { graphLayer, gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createFStateTable } from './f-state-table.js';
-import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer, windowStart } from './trace-animation.js';
+import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer } from './trace-animation.js';
 
 const WINDOW_SIZE = 10;
 const MATCH_COLUMNS = 6;
@@ -99,18 +99,34 @@ function expressionFrame(step, previous) {
   return layers;
 }
 
+// The first group shows main-string indices in the grid header.
 const matchCell = (index, row) => (Math.floor(index / MATCH_COLUMNS) * MATCH_ROWS + row - 1) + ',' + (index % MATCH_COLUMNS);
 
-function naiveAlignment(step, patternLength) {
-  const { i, start, matches } = step.variables;
+function stringAlignment(step, patternLength) {
+  const { i, j, k, start, matches } = step.variables;
   const matched = patternLength > 0 && (step.event === 'match' || (step.done && matches.length > 0));
-  const offset = start ?? (matched ? matches.at(-1) : 0);
-  return { offset, matched, focus: i ?? (matched ? offset + patternLength - 1 : offset) };
+  const currentOffset = Number.isInteger(i) && Number.isInteger(j) ? Math.max(0, i - j) : 0;
+  const offset = start ?? (matched ? matches.at(-1) : currentOffset);
+  const focus = matched ? offset + patternLength - 1 : i ?? k ?? offset;
+  return { offset, matched, focus };
 }
 
-function naiveMatchFrame(text, pattern, step) {
-  const { matches, i, equal } = step.variables;
-  const { offset, matched } = naiveAlignment(step, pattern.length);
+function kmpTable(pattern, step) {
+  const { mode, prefix, next, nextval, k, j, jump } = step.variables;
+  const cells = row => Number.isInteger(row) && row >= 0 && row < pattern.length
+    ? [0, 1, 2, 3].map(col => row + ',' + col) : [];
+  return gridLayer({
+    id: 'f-kmp-table', title: '预处理表 · 当前使用 ' + mode,
+    values: pattern.map((char, index) => [char, prefix[index] ?? '—', next[index] ?? '—', nextval[index] ?? '—']),
+    colLabels: ['字符', '前缀长度', 'next', 'nextval'],
+    roles: { swap: cells(k ?? j), focus2: cells(jump) },
+    props: { canvasWidth: 320, canvasHeight: Math.max(146, 72 + (pattern.length + 1) * 24), cellW: 50, cellH: 24 },
+  });
+}
+
+function stringMatchFrame(text, pattern, step) {
+  const { matches, i, j, k, jump, equal, mode } = step.variables;
+  const { offset, matched } = stringAlignment(step, pattern.length);
   const length = Math.max(text.length, offset + pattern.length);
   const values = [];
   const rowLabels = [];
@@ -127,12 +143,16 @@ function naiveMatchFrame(text, pattern, step) {
     );
     rowLabels.push('主串', '模式串', '下标');
   }
-  const compared = Number.isInteger(i) ? [matchCell(i, 1), matchCell(i, 2)] : [];
+  const compared = !matched && Number.isInteger(i) && Number.isInteger(j) && i >= 0 && i < text.length && j >= 0 && j < pattern.length
+    ? [matchCell(i, 1), matchCell(i, 2)] : [];
+  const patternCursors = [k, jump].filter(index => Number.isInteger(index) && index >= 0 && index < pattern.length);
+  const comparisonRole = equal === false || step.event === 'fallback' ? 'swap' : 'focus1';
   const aligned = gridLayer({
     id: 'f-match', title: '主串与模式串 · 对齐起点 ' + offset, values, rowLabels,
     colLabels: Array.from({ length: MATCH_COLUMNS }, (_, col) => col < length ? String(col) : ''),
     roles: {
-      [equal ? 'focus1' : 'swap']: compared,
+      [comparisonRole]: compared,
+      focus2: patternCursors.map(index => matchCell(offset + index, 2)),
       done: matched ? pattern.flatMap((_, index) => [matchCell(offset + index, 1), matchCell(offset + index, 2)]) : [],
     },
     props: { canvasWidth: 320, canvasHeight: Math.max(150, 72 + (values.length + 1) * 24), cellW: 36, cellH: 24 },
@@ -141,44 +161,7 @@ function naiveMatchFrame(text, pattern, step) {
   const found = matches.length ? indexedCard('f-matches', title, matches, {
     added: step.event === 'match' || step.event === 'empty' ? [matches.length - 1] : [],
   }) : sequenceLayer('f-matches', title, []);
-  return [aligned, found];
-}
-
-function kmpFrame(text, pattern, step) {
-  const v = step.variables;
-  const comparing = Number.isInteger(v.i) && Number.isInteger(v.j);
-  const matched = step.event === 'match' || (step.done && v.matches.length > 0);
-  const start = v.start ?? (matched ? v.matches.at(-1) : comparing ? Math.max(0, v.i - v.j) : 0);
-  const focus = matched ? start + Math.max(0, pattern.length - 1) : v.i ?? start + (v.k ?? 0);
-  const length = Math.max(text.length, start + pattern.length);
-  const first = windowStart(length, WINDOW_SIZE, focus);
-  const indices = Array.from({ length: Math.min(length, WINDOW_SIZE) }, (_, i) => first + i);
-  const row = (values, offset = 0) => indices.map(i => values[i - offset] ?? '');
-  const values = indices.length ? [row(text), row(pattern, start)] : [];
-  const marked = indices.filter(i => matched && i >= start && i < start + pattern.length);
-  const caret = (r, i) => indices.includes(i) ? [r + ',' + (i - first)] : [];
-  const roles = {
-    done: marked.flatMap(i => [...caret(0, i), ...caret(1, i)]),
-    swap: !matched && comparing && v.j >= 0 && v.j < pattern.length
-      ? [...caret(0, v.i), ...caret(1, start + v.j)] : [],
-    focus2: !matched && !comparing ? caret(1, start + v.k) : [],
-  };
-  const cellW = Math.max(35, ...values.flat().map(char => char.length * 10 + 14));
-  const range = indices.length < length ? ' · 下标 ' + first + '–' + indices.at(-1) : '';
-  const layers = [gridLayer({
-    id: 'f-match', title: '主串与模式串' + range, values, roles,
-    colLabels: indices.map(String), rowLabels: ['主串', '模式串'],
-    props: { canvasWidth: Math.max(320, 72 + (indices.length + 1) * cellW), canvasHeight: 160, cellW, cellH: 28 },
-  })];
-  if (v.mode) {
-    const current = v.k ?? v.j;
-    layers.push(sequenceLayer('f-jump-table', '跳转表 · ' + v.mode,
-      pattern.map((_, index) => v[v.mode][index]), { swap: [current], focus2: [v.jump] }));
-    if (v.k != null) layers.push(sequenceLayer('f-prefix', '最长真前后缀长度',
-      pattern.map((_, index) => v.prefix[index]), { swap: [v.k] }));
-  }
-  layers.push(tail('f-matches', '已匹配的起点', v.matches));
-  return layers;
+  return mode && pattern.length ? [aligned, kmpTable(pattern, step), found] : [aligned, found];
 }
 
 // Derive display columns from the visible dependencies; event order and results come from the run.
@@ -292,12 +275,13 @@ export function createFAnimation(host, explainHost, run, config) {
   const text = Array.from(input.text ?? '', showChar);
   const pattern = Array.from(input.pattern ?? '', showChar);
   const expression = step => expressionFrame(step, run.steps[step.stepIndex - 1]);
+  const stringMatch = step => stringMatchFrame(text, pattern, step);
   const frames = {
     'bracket-matching': step => bracketFrame(text, step),
     'infix-to-postfix': expression,
     'expression-evaluation': expression,
-    'naive-string-match': step => naiveMatchFrame(text, pattern, step),
-    kmp: step => kmpFrame(text, pattern, step),
+    'naive-string-match': stringMatch,
+    kmp: stringMatch,
     'expression-dag': step => expressionDagFrame(step.variables),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
   };
@@ -309,6 +293,14 @@ export function createFAnimation(host, explainHost, run, config) {
     if (mode !== 'postfix') revealCell(host, 'f-operators', operators.length - 1);
     revealCell(host, 'f-postfix', active >= 0 ? active : position);
   };
+  const followMatch = step => {
+    const { k, j, matches, mode } = step.variables;
+    const { focus } = stringAlignment(step, pattern.length);
+    revealCell(host, 'f-match', matchCell(focus, focus < MATCH_COLUMNS ? 1 : 0));
+    revealCell(host, 'f-match', matchCell(focus, 3));
+    if (mode) revealCell(host, 'f-kmp-table', (k ?? j ?? 0) + ',0');
+    revealCell(host, 'f-matches', matches.length - 1);
+  };
   const follow = {
     'bracket-matching': step => {
       revealCell(host, 'f-text', step.variables.i ?? (step.done ? text.length - 1 : 0));
@@ -316,14 +308,10 @@ export function createFAnimation(host, explainHost, run, config) {
     },
     'infix-to-postfix': followExpression,
     'expression-evaluation': followExpression,
-    'naive-string-match': step => {
-      const { focus } = naiveAlignment(step, pattern.length);
-      revealCell(host, 'f-match', matchCell(focus, focus < MATCH_COLUMNS ? 1 : 0));
-      revealCell(host, 'f-match', matchCell(focus, 3));
-      revealCell(host, 'f-matches', step.variables.matches.length - 1);
-    },
+    'naive-string-match': followMatch,
+    kmp: followMatch,
   }[run.algorithm];
-  const stateTable = follow ? null : createFStateTable(config, run.algorithm, input);
+  const stateTable = follow ? null : createFStateTable(run.algorithm, input);
   const animation = createTraceAnimation(host, explainHost, stateTable, frames[run.algorithm], 'f', { run, config });
   if (!follow) return animation;
   host.querySelector('[data-viz-engine="plus-f"] .trace-animation-stage').classList.add('f-scroll-cards');

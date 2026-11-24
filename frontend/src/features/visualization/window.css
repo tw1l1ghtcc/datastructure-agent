@@ -84,15 +84,15 @@
 .vizwin[data-trace-split] .viewport-legend { margin: 4px 14px 10px; }
 .vizwin .legend-related { background: #fdeff8; color: #8b1570; }
 .trace-animation-stage .canvas-card header span { display: none; }
-.vizwin[data-trace-animation] .viewport-scene:has([data-layer="e-triples"]) { width: 100%; }
-.trace-animation-stage.plus-viz:has([data-layer="e-triples"]) {
+.vizwin[data-trace-animation] .viewport-scene:has([data-layer="e-triples"], [data-layer="e-buckets"]) { width: 100%; }
+.trace-animation-stage.plus-viz:has([data-layer="e-triples"], [data-layer="e-buckets"]) {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 12px;
   width: 100%;
 }
-.trace-animation-stage:has([data-layer="e-triples"]) > .canvas-card { flex: none; margin-top: 0; }
+.trace-animation-stage:has([data-layer="e-triples"], [data-layer="e-buckets"]) > .canvas-card { flex: none; margin-top: 0; }
 .trace-animation-stage > [data-layer="e-column-allocation"] { order: 1; }
 .vizwin[data-trace-animation] :is(.c-state-tables, .e-state-tables, .level-order-tables) { max-width: 580px; }
 .vizwin[data-trace-animation] :is(.c-state-tables, .e-state-tables, .level-order-tables) :is(th, td) { overflow-wrap: anywhere; }

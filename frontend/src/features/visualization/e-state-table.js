@@ -13,14 +13,6 @@ function indexedTable(title, values, indices = []) {
   return highlight(table(title, ['下标', '值'], values.map((value, index) => [index, value])), indices);
 }
 
-function radixTables(step) {
-  const { cnt, exp, tmp } = step.variables;
-  const views = [indexedTable(step.done ? '排序结果' : '当前数组', step.array)];
-  if (cnt) views.push(table('位权 ' + exp + ' 的计数表', ['数位', '计数'], cnt.map((value, index) => [index, value])));
-  if (tmp) views.push(indexedTable('本轮回填', tmp));
-  return views;
-}
-
 function countingTables(run, step, countInit) {
   const v = step.variables;
   const views = [indexedTable('输入数组', step.array)];
@@ -43,21 +35,15 @@ function countingTables(run, step, countInit) {
   return views;
 }
 
-export function createEStateTable(run, config) {
+export function createECountingStateTable(run, countInit) {
   const element = document.createElement('div');
   element.className = 'e-state-tables';
-  const countInit = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
-  const renderers = {
-    radix: radixTables,
-    counting: step => countingTables(run, step, countInit),
-  };
-  const render = renderers[config.view];
   let lastStep = null;
   return {
     element,
     showStep(step) {
       if (lastStep === step) return;
-      element.replaceChildren(...render(step));
+      element.replaceChildren(...countingTables(run, step, countInit));
       lastStep = step;
     },
   };

@@ -1,5 +1,5 @@
 import { gridLayer, linkLayer } from '../../../vendor/plus/vendor/engine/model.js';
-import { createEStateTable } from './e-state-table.js';
+import { createECountingStateTable } from './e-state-table.js';
 import { createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
@@ -113,19 +113,22 @@ function tripleLayer(id, title, triples, index) {
   });
 }
 
+function indexedCard(id, title, values, roles = {}, cellLabels) {
+  return gridLayer({
+    id, title, values: [values], roles, cellLabels,
+    props: { indexedArray: true, canvasWidth: 320, canvasHeight: Math.max(130, Math.ceil(values.length / 4) * 44 + 24) },
+  });
+}
+
 function matrixFrame(step, columnCounts) {
   const { rows, cols, triples, k, out, pos, col, num, cpos } = step.variables;
   const layers = [tripleLayer('e-triples', `原矩阵三元组 · ${rows} × ${cols}`, triples, k)];
   if (out) layers.push(tripleLayer('e-transpose', `转置输出 · ${cols} × ${rows}`, out, pos));
   const counts = num ?? (columnCounts?.stepIndex <= step.stepIndex ? columnCounts.variables.num : null);
   if (counts?.length) {
-    layers.push(gridLayer({
-      id: 'e-column-allocation', title: '按原列分配输出位置（数量 / 下一输出下标）',
-      values: [counts.map((count, index) => count + ' / ' + (cpos?.[index] ?? '—'))],
-      cellLabels: counts.map((_, index) => '原列 ' + index),
-      roles: { swap: Number.isInteger(col) ? [col] : [] },
-      props: { indexedArray: true, canvasWidth: 320, canvasHeight: Math.max(130, Math.ceil(counts.length / 4) * 44 + 24) },
-    }));
+    layers.push(indexedCard('e-column-allocation', '按原列分配输出位置（数量 / 下一输出下标）',
+      counts.map((count, index) => count + ' / ' + (cpos?.[index] ?? '—')),
+      { swap: Number.isInteger(col) ? [col] : [] }, counts.map((_, index) => '原列 ' + index)));
   }
   return layers;
 }
@@ -133,11 +136,15 @@ function matrixFrame(step, columnCounts) {
 function radixFrame(step, previous) {
   const { cnt, exp, tmp } = step.variables;
   const old = previous?.variables;
-  const changed = old?.exp === exp && old?.cnt ? cnt?.findIndex((value, i) => value !== old.cnt[i]) : undefined;
-  const placed = step.event === 'place' ? tmp?.findIndex((value, i) => value !== old?.tmp?.[i]) : undefined;
-  const layers = [sequenceLayer('e-array', step.done ? '排序结果' : '当前数组', step.array)];
-  if (cnt) layers.push(sequenceLayer('e-buckets', '桶计数 · 位权 ' + exp, cnt, { swap: [changed] }));
-  if (tmp) layers.push(sequenceLayer('e-output', '本轮回填', tmp, { added: [placed] }));
+  const layers = [indexedCard('e-array', step.done ? '排序结果' : '当前数组', step.array)];
+  if (cnt) {
+    const changed = old?.cnt && old.exp === exp ? cnt.findIndex((value, i) => value !== old.cnt[i]) : -1;
+    layers.push(indexedCard('e-buckets', '桶计数 · 位权 ' + exp, cnt, { swap: changed < 0 ? [] : [changed] }));
+  }
+  if (tmp) {
+    const placed = step.event === 'place' ? tmp.findIndex((value, i) => value !== old?.tmp?.[i]) : -1;
+    layers.push(indexedCard('e-output', '本轮回填', tmp.map(value => value ?? '—'), { added: placed < 0 ? [] : [placed] }));
+  }
   return layers;
 }
 
@@ -173,6 +180,6 @@ export function createEAnimation(host, explainHost, run, config) {
     radix: step => radixFrame(step, previous(step)),
     counting: step => countingFrame(run, step, init),
   };
-  const stateTable = fillViewport || config.view === 'matrix' ? null : createEStateTable(run, config);
+  const stateTable = config.view === 'counting' ? createECountingStateTable(run, init) : null;
   return createTraceAnimation(host, explainHost, stateTable, frames[config.view], 'e', { run, config, fillViewport });
 }

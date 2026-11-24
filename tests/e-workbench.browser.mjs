@@ -19,7 +19,7 @@ const examples = [
   ['singly-linked-list-reverse', [6, 4, 2]],
   ['kth-from-end', { nodeId: 2, value: 1 }],
   ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }],
-  ['radix-sort', [3, 10, 21, 21], '排序结果'],
+  ['radix-sort', [3, 10, 21, 21]],
   ['counting-sort', [-1, 0, 2, 2], '输出数组'],
 ];
 
@@ -105,7 +105,7 @@ try {
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
-    if (algorithm === 'sparse-matrix-transpose') {
+    if (algorithm === 'sparse-matrix-transpose' || algorithm === 'radix-sort') {
       assert.equal(await page.locator('.e-state-tables').count(), 0);
     } else if (!title) {
       const id = algorithm.startsWith('array-list-') ? 'e-array' : 'e-list';
@@ -421,9 +421,32 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(base + '/#workbench?algorithm=radix-sort');
-  await page.click('#fillDemo');
-  await page.fill('#e-data', '2147483647, 1000000000, 0');
-  assert.deepEqual((await start(page, 'radix-sort')).result, [0, 1000000000, 2147483647]);
+  const radixInput = [2147483647, 1000000000, 0, ...Array.from({ length: 21 }, (_, index) => 21 - index % 11)];
+  await page.fill('#e-data', radixInput.join(', '));
+  const radix = await start(page, 'radix-sort');
+  const sorted = [...radixInput].sort((a, b) => a - b);
+  assert.deepEqual(radix.result, sorted);
+  assert.deepEqual(await cells(page, 'e-array'), radixInput.map(display));
+  await page.locator('[data-t="last"]').click();
+  await assertStep(page, radix, radix.steps.length - 1);
+  assert.deepEqual(await cells(page, 'e-array'), sorted.map(display));
+  await page.click('#prevBtn');
+  await page.click('#prevBtn');
+  const place = radix.steps.at(-3);
+  const prior = radix.steps.at(-4);
+  assert.equal(place.event, 'place');
+  await assertStep(page, radix, place.stepIndex);
+  assert.equal(await page.locator('.e-state-tables').count(), 0);
+  assert.deepEqual(await cells(page, 'e-array'), place.array.map(display));
+  assert.deepEqual(await cells(page, 'e-output'), place.variables.tmp.map(display));
+  assert.deepEqual(await cells(page, 'e-buckets'), place.variables.cnt.map(display));
+  for (const [id, field] of [['e-output', 'tmp'], ['e-buckets', 'cnt']]) {
+    const index = place.variables[field].findIndex((value, index) => value !== prior.variables[field][index]);
+    assert.equal(await layer(page, id).locator('[data-avc-key="g-' + index + '"] rect').getAttribute('stroke-width'), '2');
+  }
+  await page.click('#prevBtn');
+  await assertStep(page, radix, prior.stepIndex);
+  assert.deepEqual(await cells(page, 'e-output'), prior.variables.tmp.map(display));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'mobile layout fits viewport');
   await page.setViewportSize({ width: 1120, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });

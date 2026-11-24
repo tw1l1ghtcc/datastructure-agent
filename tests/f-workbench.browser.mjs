@@ -13,7 +13,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 const cases = [
   { id: 'bracket-matching', result: true, field: 'matched' },
   { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'] },
-  { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/ },
+  { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value' },
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
   { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
   { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/ },
@@ -35,17 +35,18 @@ async function assertAnimation(page, run, step) {
     assert.deepEqual(await layer(page, 'brackets').locator('[data-avc-key^="idx-"]').allTextContents(), v.stack.map(item => String(item.i)));
   }
   if (v.operators) {
-    const converting = step.algorithm === 'infix-to-postfix';
-    if (converting) assert.equal(await page.locator('.c-state-tables').count(), 0);
+    const fullExpression = step.algorithm === 'infix-to-postfix' || step.algorithm === 'expression-evaluation';
+    if (fullExpression) assert.equal(await page.locator('.c-state-tables').count(), 0);
     for (const [name, tokens] of [['operators', v.operators], ['postfix', v.output]]) {
-      assert.deepEqual(await cells(page, name), (converting ? tokens : tokens.slice(-10)).map(token => token.text));
-      if (converting) {
+      assert.deepEqual(await cells(page, name), (fullExpression ? tokens : tokens.slice(-10)).map(token => token.text));
+      if (fullExpression) {
         assert.deepEqual(await layer(page, name).locator('[data-avc-key^="idx-"]').allTextContents(), tokens.map(token => String(token.index)));
       }
     }
   }
   if (step.algorithm === 'expression-evaluation') {
-    assert.deepEqual(await cells(page, 'operands'), v.stack.slice(-10).map(display));
+    assert.deepEqual(await cells(page, 'operands'), v.stack.map(display));
+    if (v.mode === 'postfix') assert.equal(await layer(page, 'operators').count(), 0);
   }
   if (step.algorithm === 'naive-string-match' || step.algorithm === 'kmp') {
     assert.ok(await layer(page, 'match').count());
@@ -119,6 +120,7 @@ try {
     await assertStep(page, run, run.steps.length - 1);
     if (caption) assert.match(await page.locator('.c-state-tables').innerText(), caption, id);
     else if (id === 'bracket-matching') assert.match(await layer(page, 'text').getAttribute('aria-label'), /匹配成功/);
+    else if (id === 'expression-evaluation') assert.match(await layer(page, 'operands').getAttribute('aria-label'), /结果 -8/);
     else assert.match(await layer(page, 'postfix').getAttribute('aria-label'), /转换完成/);
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
@@ -243,6 +245,46 @@ try {
   await assertStep(page, syntax, syntax.steps.length - 1);
   assert.match(syntax.result.error, /左括号未闭合.*下标 0/);
   assert.match(await postfix.getAttribute('aria-label'), /左括号未闭合.*下标 0/);
+
+  await selectWorkbenchAlgorithm(page, 'expression-evaluation');
+  await page.selectOption('#f-mode', 'postfix');
+  await page.fill('#c-data', [...Array(32).fill('1'), ...Array(31).fill('+')].join(' '));
+  const evaluationResponse = page.waitForResponse(response => response.url().endsWith('/api/algorithms/expression-evaluation/runs'));
+  await page.click('#startBtn');
+  const evaluation = await (await evaluationResponse).json();
+  assert.deepEqual(evaluation.result, { value: 32 });
+  for (let index = 0; index < 33; index++) await ruler.press('ArrowRight');
+  await assertStep(page, evaluation, 33);
+  assert.equal(evaluation.steps[33].variables.stack.length, 32);
+  const operands = layer(page, 'operands');
+  for (const svg of [operands, postfix]) {
+    assert.equal(await svg.locator('[data-avc-key="g-31"] rect').getAttribute('stroke-width'), '2');
+    assert.ok(await svg.evaluate(element => element.parentElement.scrollTop > 0));
+  }
+  await ruler.press('End');
+  await assertStep(page, evaluation, evaluation.steps.length - 1);
+  assert.match(await operands.getAttribute('aria-label'), /结果 32/);
+  await ruler.press('ArrowLeft');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, evaluation, evaluation.steps.length - 3);
+  assert.deepEqual(await cells(page, 'operands'), ['1', '31']);
+
+  await page.click('#c-edit');
+  await page.selectOption('#f-mode', 'infix');
+  await page.fill('#c-data', '8/(2-2)');
+  const arithmeticResponse = page.waitForResponse(response => response.url().endsWith('/api/algorithms/expression-evaluation/runs'));
+  await page.click('#startBtn');
+  const arithmetic = await (await arithmeticResponse).json();
+  const open = arithmetic.steps.findIndex(step => step.event === 'push-open');
+  for (let index = 0; index < open; index++) await ruler.press('ArrowRight');
+  await assertStep(page, arithmetic, open);
+  assert.deepEqual(await cells(page, 'operators'), ['/', '(']);
+  await ruler.press('End');
+  await assertStep(page, arithmetic, arithmetic.steps.length - 1);
+  assert.match(await operands.getAttribute('aria-label'), /除数为零.*下标 1/);
+  assert.equal(await postfix.locator('[data-avc-key="idx-4"]').textContent(), '1');
+  assert.equal(await postfix.locator('[data-avc-key="g-4"] rect').getAttribute('stroke-width'), '2');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'evaluation cards fit the mobile workbench');
 
   assert.deepEqual(errors, []);
 } finally {

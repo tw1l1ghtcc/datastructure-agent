@@ -61,16 +61,40 @@ function tokenCard(id, title, tokens, roles) {
     : sequenceLayer(id, title, []);
 }
 
-function conversionFrame(step, previous) {
-  const { operators, output } = step.variables;
-  const appended = output.length > (previous?.variables.output.length ?? 0);
+function evaluationTokenIndex(step) {
+  const { index, output } = step.variables;
+  const evaluating = step.event === 'value-push' || step.event === 'compute' || step.result?.error;
+  if (!evaluating || !Number.isInteger(index)) return -1;
+  return output.findIndex(token => token.index === index);
+}
+
+function operandCard(step) {
+  const { stack } = step.variables;
+  let title = '操作数栈（底到顶）';
+  if (step.result?.error) title += ' · ' + step.result.error;
+  else if (step.done) title += ' · 结果 ' + step.result.value;
+  if (!stack.length) return sequenceLayer('f-operands', title, []);
+  const role = step.event === 'value-push' || step.event === 'compute' ? 'added' : 'focus2';
+  return indexedCard('f-operands', title, stack, { [role]: [stack.length - 1] });
+}
+
+function expressionFrame(step, previous) {
+  const { operators, output, stack, mode } = step.variables;
+  const appended = step.event !== 'postfix' && output.length > (previous?.variables.output.length ?? 0);
+  const active = stack ? evaluationTokenIndex(step) : -1;
+  const roles = {
+    added: appended ? [output.length - 1] : [],
+    [step.result?.error ? 'swap' : 'focus1']: active >= 0 ? [active] : [],
+  };
   let title = '后缀序列（格下为原下标）';
-  if (step.result?.error) title = '已输出词元 · ' + step.result.error;
-  else if (step.done) title += ' · 转换完成';
-  return [
-    tokenCard('f-operators', '运算符栈（底到顶，格下为原下标）', operators, { focus2: [operators.length - 1] }),
-    tokenCard('f-postfix', title, output, { added: appended ? [output.length - 1] : [] }),
-  ];
+  if (!stack && step.done) title = step.result?.error ? '已输出词元 · ' + step.result.error : title + ' · 转换完成';
+  const layers = [];
+  if (stack) layers.push(operandCard(step));
+  if (mode !== 'postfix') {
+    layers.push(tokenCard('f-operators', '运算符栈（底到顶，格下为原下标）', operators, { focus2: [operators.length - 1] }));
+  }
+  layers.push(tokenCard('f-postfix', title, output, roles));
+  return layers;
 }
 
 function matchFrame(text, pattern, step) {
@@ -220,27 +244,31 @@ export function createFAnimation(host, explainHost, run, config) {
   const input = run.input;
   const text = Array.from(input.text ?? '', showChar);
   const pattern = Array.from(input.pattern ?? '', showChar);
+  const expression = step => expressionFrame(step, run.steps[step.stepIndex - 1]);
   const frames = {
     'bracket-matching': step => bracketFrame(text, step),
-    'infix-to-postfix': step => conversionFrame(step, run.steps[step.stepIndex - 1]),
-    'expression-evaluation': step => [
-      tail('f-operands', '操作数栈（栈顶在右）', step.variables.stack, true),
-      ...expressionStacks(step.variables),
-    ],
+    'infix-to-postfix': expression,
+    'expression-evaluation': expression,
     'naive-string-match': step => matchFrame(text, pattern, step),
     kmp: step => matchFrame(text, pattern, step),
     'expression-dag': step => expressionDagFrame(step.variables),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
+  };
+  const followExpression = step => {
+    const { operators, output, stack, mode } = step.variables;
+    const active = stack ? evaluationTokenIndex(step) : -1;
+    const position = step.event === 'postfix' ? 0 : output.length - 1;
+    if (stack) revealIndexedCell(host, 'f-operands', stack.length - 1);
+    if (mode !== 'postfix') revealIndexedCell(host, 'f-operators', operators.length - 1);
+    revealIndexedCell(host, 'f-postfix', active >= 0 ? active : position);
   };
   const follow = {
     'bracket-matching': step => {
       revealIndexedCell(host, 'f-text', step.variables.i ?? (step.done ? text.length - 1 : 0));
       revealIndexedCell(host, 'f-brackets', step.variables.stack.length - 1);
     },
-    'infix-to-postfix': step => {
-      revealIndexedCell(host, 'f-operators', step.variables.operators.length - 1);
-      revealIndexedCell(host, 'f-postfix', step.variables.output.length - 1);
-    },
+    'infix-to-postfix': followExpression,
+    'expression-evaluation': followExpression,
   }[run.algorithm];
   const stateTable = follow ? null : createFStateTable(config, run.algorithm, input);
   const animation = createTraceAnimation(host, explainHost, stateTable, frames[run.algorithm], 'f', { run, config });

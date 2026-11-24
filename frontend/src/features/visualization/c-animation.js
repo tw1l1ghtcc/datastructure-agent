@@ -3,6 +3,7 @@ import { arrayLayer, treeLayer } from '../../../vendor/plus/vendor/engine/model.
 import { createCStateTable } from './c-state-table.js';
 import { createExplanationPanel } from './explanation-panel.js';
 import { describeStructuredStep } from './structured-explanation.js';
+import { indexedCard } from './trace-animation.js';
 
 const ARRAY_WINDOW = 16;
 const MIN_WIDTH = 320;
@@ -22,7 +23,7 @@ function sequence(id, title, values, { focus = [], tail = false, indexBase = 0 }
   });
 }
 
-function tree(id, title, nodes, roots, roles, extraEdges = []) {
+function tree(id, title, nodes, roots, roles, { extraEdges = [], edgeTags } = {}) {
   const boxWidth = Math.max(32, ...nodes.map(node => node.boxWidth));
   const leafGap = boxWidth + 20;
   const byId = new Map(nodes.map(node => [node.id, node]));
@@ -37,7 +38,7 @@ function tree(id, title, nodes, roots, roles, extraEdges = []) {
   return {
     width: Math.max(MIN_WIDTH, boxWidth + Math.max(0, leaves - 1) * leafGap + 44),
     layer: treeLayer({
-      id, title, nodes, roots, roles, extraEdges,
+      id, title, nodes, roots, roles, extraEdges, edgeTags,
       props: { leafGap, canvasHeight: 130 + maxDepth * 63 },
     }),
   };
@@ -53,13 +54,16 @@ function optimalTree(step) {
   const roots = v.nodes.filter(node => !children.has(node.id)).map(node => node.id);
   const nodes = v.nodes.map(node => treeNode(node.id, String(node.weight),
     [node.left, node.right].filter(child => child !== null)));
-  const stage = tree('c-merge-tree', '归并节点森林', nodes, roots, {
+  const edgeTags = Object.fromEntries(v.nodes.filter(node => node.left != null)
+    .flatMap(node => [[node.left, 'L'], [node.right, 'R']]));
+  const stage = tree('c-merge-tree', '归并节点森林（L 左，R 右）', nodes, roots, {
     focus1: v.selected, focus2: v.parent == null ? [] : [v.parent],
-  });
-  return { width: stage.width, layers: [
-    stage.layer,
-    sequence('c-candidates', '候选段权重（队首在左）', v.candidates.map(id => v.nodes[id].weight)),
-  ] };
+  }, { edgeTags });
+  const candidates = v.candidates.length
+    ? indexedCard('c-candidates', '候选段权重（按取出顺序，格下为节点 ID）',
+      v.candidates.map(id => v.nodes[id].weight), {}, v.candidates.map(id => '#' + id))
+    : sequence('c-candidates', '候选段为空', []);
+  return { width: stage.width, layers: [candidates, stage.layer] };
 }
 
 function multiway(step) {
@@ -98,7 +102,7 @@ function searchTree(step) {
   const stage = tree('c-search-tree', bPlus ? 'B+ 树与叶链（虚线）' : 'B 树结构',
     display, root == null ? [] : [root], {
       focus1: focused, focus2: partners, done: path,
-    }, leafLinks);
+    }, { extraEdges: leafLinks });
   return { width: stage.width, layers: [stage.layer] };
 }
 
@@ -117,8 +121,8 @@ export function createCAnimation(host, run, config, explainHost) {
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz c-animation-stage';
   element.append(canvas);
-  const state = createCStateTable(config);
-  element.append(state.element);
+  const state = run.algorithm === 'optimal-merge-tree' ? null : createCStateTable(config);
+  if (state) element.append(state.element);
   host.append(element);
   const stage = createStage(canvas);
   const { explain, caption, status } = createExplanationPanel();
@@ -135,8 +139,21 @@ export function createCAnimation(host, run, config, explainHost) {
     for (const [index, svg] of [...canvas.querySelectorAll('.avc-svg')].entries()) {
       svg.setAttribute('role', 'img');
       svg.setAttribute('aria-label', frame.layers[index].title);
+      if (svg.dataset.avcSvg === 'c-candidates') {
+        const viewport = svg.parentElement;
+        viewport.scrollTop = 0;
+        if (viewport.scrollHeight > viewport.clientHeight) {
+          viewport.tabIndex = 0;
+          viewport.setAttribute('role', 'region');
+          viewport.setAttribute('aria-label', frame.layers[index].title);
+        } else {
+          viewport.removeAttribute('tabindex');
+          viewport.removeAttribute('role');
+          viewport.removeAttribute('aria-label');
+        }
+      }
     }
-    state.showStep(step);
+    state?.showStep(step);
     caption.textContent = step.description;
     status.textContent = describeStructuredStep(run, step, config, 'c');
   }

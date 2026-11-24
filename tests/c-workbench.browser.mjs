@@ -67,9 +67,15 @@ try {
       assert.deepEqual(await animated.locator('[data-layer="c-output"] [data-avc-key^="val-"] text').allTextContents(),
         run.result.map(String));
     }
-    const tableText=await page.locator('.c-state-tables').innerText();
-    assert.doesNotMatch(tableText,/undefined|NaN/);
-    if(tree) assert.match(tableText,/查询结果.*查询键/s);
+    const tables = animated.locator('.c-state-tables');
+    if (algorithm === 'optimal-merge-tree') {
+      assert.equal(await tables.count(), 0);
+      assert.match(await page.locator('[data-explain-host]').innerText(), /总代价 17/);
+    } else {
+      const tableText = await tables.innerText();
+      assert.doesNotMatch(tableText, /undefined|NaN/);
+      if (tree) assert.match(tableText, /查询结果.*查询键/s);
+    }
     await page.click('#prevBtn');
     assert.equal(await page.locator('#code-lines .active').count(),1);
     assert.equal(await page.locator('[data-explain-host] .bsviz-caption').textContent(), run.steps.at(-2).description);
@@ -127,6 +133,64 @@ try {
     large.result.nodes.filter(node => node.leaf && node.next != null).length);
   assert.ok(await page.locator('[data-viz-body]').evaluate(body => body.scrollWidth > body.clientWidth));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+  await selectWorkbenchAlgorithm(page, 'optimal-merge-tree');
+  const startOptimal = async weights => {
+    await page.fill('#c-data', weights.join(','));
+    const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/optimal-merge-tree/runs'));
+    await page.click('#startBtn');
+    const response = await pending;
+    assert.equal(response.status(), 200);
+    await page.locator('#c-edit').waitFor();
+    return response.json();
+  };
+  const weights = Array.from({ length: 64 }, (_, index) => index % 3 === 0 ? 0 : 1);
+  weights[0] = Number.MAX_SAFE_INTEGER - 10000;
+  const optimal = await startOptimal(weights);
+  const candidates = page.locator('[data-layer="c-candidates"] svg');
+  const forest = page.locator('[data-layer="c-merge-tree"] svg');
+  const queueViewport = page.locator('[data-layer="c-candidates"] .avc-svg-wrap');
+  const assertCandidates = async index => {
+    const { nodes, candidates: ids } = optimal.steps[index].variables;
+    assert.deepEqual(await candidates.locator('[data-avc-key^="idx-"]').allTextContents(), ids.map(id => '#' + id));
+    assert.deepEqual(await candidates.locator('[data-avc-key^="gv-"]').allTextContents(), ids.map(id => String(nodes[id].weight)));
+    assert.equal(await page.locator('[data-viz-engine="plus-c"] .c-state-tables').count(), 0);
+  };
+  await assertCandidates(0);
+  assert.equal(await queueViewport.getAttribute('tabindex'), '0');
+  assert.ok(await queueViewport.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop > 0;
+  }));
+  await page.click('#nextBtn');
+  await assertCandidates(1);
+  assert.equal(await queueViewport.evaluate(element => element.scrollTop), 0);
+  assert.deepEqual(optimal.steps[1].variables.selected, [3, 6]);
+  for (const id of [3, 6]) {
+    assert.equal(await forest.locator('[data-avc-key="n-' + id + '"] rect').getAttribute('stroke-width'), '2');
+  }
+  await page.click('#nextBtn');
+  await assertCandidates(2);
+  for (const [child, tag] of [[3, 'L'], [6, 'R']]) {
+    assert.equal(await forest.locator('[data-avc-key="e-64-' + child + '"]').count(), 1);
+    assert.equal(await forest.locator('[data-avc-key="et-' + child + '"]').textContent(), tag);
+  }
+  await page.click('#prevBtn');
+  await assertCandidates(1);
+  assert.equal(await forest.locator('[data-avc-key="n-64"]').count(), 0);
+  await page.locator('[data-tl-ruler]').press('End');
+  await assertCandidates(optimal.steps.length - 1);
+  assert.equal(await forest.locator('[data-avc-key^="n-"]').count(), 127);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+  for (const input of [[], [7]]) {
+    await page.click('#c-edit');
+    const run = await startOptimal(input);
+    await page.locator('[data-tl-ruler]').press('End');
+    assert.equal(run.result.cost, 0);
+    assert.equal(await forest.locator('[data-avc-key^="n-"]').count(), input.length);
+    assert.deepEqual(await candidates.locator('[data-avc-key^="gv-"]').allTextContents(), input.map(String));
+  }
 
   await selectWorkbenchAlgorithm(page,'binary-search');
   await page.click('#fillDemo');

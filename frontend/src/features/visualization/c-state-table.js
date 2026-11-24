@@ -22,17 +22,12 @@ export function createCStateTable(config) {
     showStep(step) {
       const v=step.variables;
       const views=[];
-      if (Array.isArray(v.nodes)) {
-        if (config.tree) {
-          const tree=table('节点表 · 根 ID ' + stateText(v.root), ['ID','键','孩子 ID','叶节点','下一叶 ID'],
-            v.nodes.map(node=>[node.id,node.keys,node.children,node.leaf ? '是' : '否',node.next]));
-          for(const row of tree.tBodies[0].rows) row.dataset.current=String(Number(row.cells[0].textContent)===v.currentNode);
-          views.push(tree);
-          if (v.leafKeys) views.push(table('叶链中的键',['按顺序排列'],[[v.leafKeys]]));
-        } else {
-          views.push(table('归并节点',['ID','权重','左孩子 ID','右孩子 ID'],v.nodes.map(node=>[node.id,node.weight,node.left,node.right])));
-          views.push(table('候选段',['节点 ID','权重'],(v.candidates ?? []).map(id=>[id,v.nodes.find(node=>node.id===id)?.weight])));
-        }
+      if (config.tree && Array.isArray(v.nodes)) {
+        const tree=table('节点表 · 根 ID ' + stateText(v.root), ['ID','键','孩子 ID','叶节点','下一叶 ID'],
+          v.nodes.map(node=>[node.id,node.keys,node.children,node.leaf ? '是' : '否',node.next]));
+        for(const row of tree.tBodies[0].rows) row.dataset.current=String(Number(row.cells[0].textContent)===v.currentNode);
+        views.push(tree);
+        if (v.leafKeys) views.push(table('叶链中的键',['按顺序排列'],[[v.leafKeys]]));
       }
       if (Array.isArray(v.runs)) views.push(table(config.field==='runs' ? '当前有序段' : '已完成段',['段号（从 0 开始）','元素'],v.runs.map((run,index)=>[index,run])));
       if (config.field==='array') {

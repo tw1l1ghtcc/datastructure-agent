@@ -13,7 +13,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 
 const examples = [
   ['array-list-reverse', [5, 4, 3, 2, 1]],
-  ['array-list-delete-range', [1, 5], '逻辑长度 2'],
+  ['array-list-delete-range', [1, 5]],
   ['singly-linked-list-insert', [1, 2, 3]],
   ['singly-linked-list-delete', [2, 3]],
   ['singly-linked-list-reverse', [6, 4, 2]],
@@ -69,7 +69,7 @@ async function assertStep(page, run, index) {
   } else if (v.triples) {
     assert.deepEqual(await cells(page, 'e-triples'), v.triples.flatMap(({ i, j, e }) => [i, j, e].map(display)));
     if (v.out) assert.deepEqual(await cells(page, 'e-transpose'), v.out.flatMap(({ i, j, e }) => [i, j, e].map(display)));
-  } else if (step.array.length <= 10) {
+  } else if (step.algorithm === 'array-list-delete-range' || step.array.length <= 10) {
     assert.deepEqual(await cells(page, 'e-array'), step.array.map(display));
     if (v.tmp || v.output) assert.deepEqual(await cells(page, 'e-output'), (v.tmp ?? v.output).map(display));
   }
@@ -106,7 +106,7 @@ try {
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
     if (!title) {
-      const id = algorithm === 'array-list-reverse' ? 'e-array' : 'e-list';
+      const id = algorithm.startsWith('array-list-') ? 'e-array' : 'e-list';
       await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
       await assertFullCanvas(page, id);
@@ -129,6 +129,15 @@ try {
         assert.equal(await svg.locator(`[data-avc-key="idx-${index}"]`).textContent(), label);
         assert.equal(await svg.locator(`[data-avc-key="g-${index}"] rect`).getAttribute('stroke-width'), '2');
       }
+    }
+    if (algorithm === 'array-list-delete-range') {
+      const svg = layer(page, 'e-array');
+      assert.equal(await svg.locator('[data-avc-key="idx-1"]').textContent(), '待删 1');
+      assert.equal(await svg.locator('[data-avc-key="idx-3"]').textContent(), '待删 3');
+      await page.click('#nextBtn');
+      await assertStep(page, run, 2);
+      assert.equal(await svg.locator('[data-avc-key="idx-4"]').textContent(), '来源 4');
+      assert.equal(await svg.locator('[data-avc-key="idx-1"]').textContent(), '目标 1');
     }
     if (algorithm === 'kth-from-end') {
       const svg = layer(page, 'e-list');
@@ -167,6 +176,12 @@ try {
     }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
+    if (algorithm === 'array-list-delete-range') {
+      const svg = layer(page, 'e-array');
+      assert.equal(await svg.locator('[data-avc-key="ptr-length"] text').textContent(), '逻辑长度 2');
+      assert.equal(await svg.locator('[data-avc-key="idx-2"]').textContent(), '无效 2');
+      assert.equal(await svg.locator('[data-avc-key="g-2"] rect').getAttribute('fill'), '#f7f8fc');
+    }
     if (algorithm === 'kth-from-end') {
       const svg = layer(page, 'e-list');
       assert.match(await svg.locator('[data-avc-key="name"]').textContent(), /找到结点 #2，值 1/);
@@ -308,6 +323,39 @@ try {
     await ruler.press('End');
     assert.deepEqual(await cells(page, 'e-array'), [...input].reverse().map(String));
   }
+
+  await selectWorkbenchAlgorithm(page, 'array-list-delete-range');
+  const stored = Array.from({ length: 64 }, (_, index) => -2147483648 + index);
+  await page.fill('#e-data', stored.join(','));
+  await page.fill('#e-left', '1');
+  await page.fill('#e-right', '61');
+  const ranged = await start(page, 'array-list-delete-range');
+  await assertFullCanvas(page, 'e-array');
+  await page.click('#nextBtn');
+  await page.click('#nextBtn');
+  await assertStep(page, ranged, 2);
+  const rangeCanvas = layer(page, 'e-array');
+  assert.equal(await rangeCanvas.locator('[data-avc-key="idx-62"]').textContent(), '来源 62');
+  assert.equal(await rangeCanvas.locator('[data-avc-key="idx-1"]').textContent(), '目标 1');
+  await ruler.press('End');
+  await assertStep(page, ranged, ranged.steps.length - 1);
+  assert.deepEqual(ranged.result, [stored[0], stored[62], stored[63]]);
+  assert.equal(await rangeCanvas.locator('[data-avc-key="idx-63"]').textContent(), '无效 63');
+  assert.ok(await rangeCanvas.evaluate(svg => {
+    const box = svg.getBBox();
+    const { width, height } = svg.viewBox.baseVal;
+    return box.x >= -1 && box.y >= -1 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1;
+  }), '64 个槽位和逻辑长度标记都显示在画布内');
+
+  await page.click('#e-edit');
+  await page.fill('#e-left', '0');
+  await page.fill('#e-right', '63');
+  const cleared = await start(page, 'array-list-delete-range');
+  await ruler.press('End');
+  await assertStep(page, cleared, cleared.steps.length - 1);
+  assert.deepEqual(cleared.result, []);
+  assert.equal(await rangeCanvas.locator('[data-avc-key="ptr-length"] text').textContent(), '逻辑长度 0');
+  assert.equal(await rangeCanvas.locator('[data-avc-key^="idx-"]', { hasText: '无效' }).count(), 64);
 
   await selectWorkbenchAlgorithm(page, 'kth-from-end');
   const repeated = Array(64).fill(-2147483648);

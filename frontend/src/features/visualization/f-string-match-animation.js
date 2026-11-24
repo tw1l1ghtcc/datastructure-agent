@@ -91,7 +91,10 @@ function createJumpRow(mode, title, pattern) {
       tiles.show(pattern.map((_, index) => v[mode][index] ?? '—'), {
         swap: Number.isInteger(lookup) && !step.done ? [lookup] : [],
         focus2: step.event === 'fallback' && v.jump >= 0 ? [v.jump] : [],
-      }, pattern.map((char, index) => `${index} · ${char} · 前缀长度 ${v.prefix[index] ?? '—'} · next ${v.next[index] ?? '—'} · nextval ${v.nextval[index] ?? '—'}`));
+      }, pattern.map((char, index) => {
+        const description = `${index} · ${char} · 前缀长度 ${v.prefix[index] ?? '—'} · next ${v.next[index] ?? '—'}`;
+        return mode === 'nextval' ? description + ` · nextval ${v.nextval[index] ?? '—'}` : description;
+      }));
       if (step.stepIndex === 0) track.scrollLeft = 0;
       else reveal(track, lookup);
     },
@@ -130,7 +133,7 @@ export function createStringMatchAnimation(host, explainHost, run, config, text,
   let jumps;
   if (kmp) {
     const mode = run.input.mode ?? 'next';
-    const title = config.modes.find(([value]) => value === mode)[1] + ' 数组';
+    const title = mode === 'nextval' ? '改进后 · nextval 数组' : '改进前 · next 数组';
     jumps = createJumpRow(mode, title, pattern);
     strips.push(jumps);
     element.append(jumps.element);

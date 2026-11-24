@@ -150,8 +150,8 @@ try {
   await page.goto(base);
   for (const item of cases) {
     const { id, mode, field, result, caption, conclusion } = item;
-    await selectWorkbenchAlgorithm(page, id);
-    if (mode) await page.selectOption('#f-mode', mode);
+    await selectWorkbenchAlgorithm(page, id === 'kmp' ? 'kmp-nextval' : id);
+    if (mode && id !== 'kmp') await page.selectOption('#f-mode', mode);
     await page.click('#fillDemo');
     const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/algorithms/' + id + '/runs'));
     await page.click('#startBtn');
@@ -408,13 +408,23 @@ try {
     assert.ok(await connector.isHidden());
   }
 
-  await selectWorkbenchAlgorithm(page, 'kmp');
   const preprocessing = layer(page, 'kmp-next');
-  assert.deepEqual(await page.locator('#f-mode option').allTextContents(), ['改进前 · next', '改进后 · nextval']);
   for (const [mode, jump] of [['next', 1], ['nextval', -1]]) {
-    if (mode === 'nextval') await page.click('#c-edit');
-    await page.selectOption('#f-mode', mode);
+    const choice = mode === 'next' ? 'kmp' : 'kmp-nextval';
+    await selectWorkbenchAlgorithm(page, choice);
+    assert.equal(await page.locator('#algorithm-trigger').getAttribute('data-algorithm'), choice);
+    assert.ok(await page.locator('#f-mode').isHidden());
+    assert.equal(new URL(page.url()).hash, '#workbench?algorithm=' + choice);
     const run = await startStringMatch(page, 'kmp', 'aab', 'aaa');
+    assert.equal(run.input.mode, mode);
+    if (mode === 'next') {
+      for (const [index, expected] of [['-1', '—', '—'], ['-1', '0', '—'], ['-1', '0', '1']].entries()) {
+        await ruler.press('ArrowRight');
+        await assertStep(page, run, index + 1);
+        assert.deepEqual(await cells(page, 'kmp-next'), expected);
+      }
+      await ruler.press('Home');
+    }
     const fallback = run.steps.findIndex(step => step.event === 'fallback');
     for (let index = 0; index < fallback - 1; index++) await ruler.press('ArrowRight');
     if (mode === 'next') await advanceWithPatternSlide(page, ruler);
@@ -458,6 +468,8 @@ try {
   await assertStep(page, emptyKmp, emptyKmp.steps.length - 1);
   assert.deepEqual(emptyKmp.result, [0]);
   assert.equal(await preprocessing.count(), 0);
+  await page.reload();
+  assert.equal(await page.locator('#algorithm-trigger').getAttribute('data-algorithm'), 'kmp-nextval');
 
   await selectWorkbenchAlgorithm(page, 'expression-dag');
   const startDag = async expression => {

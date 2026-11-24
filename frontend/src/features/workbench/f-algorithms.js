@@ -1,5 +1,11 @@
 const matchFields = [['i', '主串下标'], ['j', '模式串下标'], ['start', '对齐起点'], ['matches', '匹配位置']];
 const expressionHelp = '支持多位非负整数、空白、括号和二元 + - * /。最多 64 个词元，整数词元不超过 2147483647。';
+const kmp = {
+  chapter: 4, field: 'text', label: '主串', example: 'abababaca', runAlgorithm: 'kmp',
+  secondary: { label: '模式串', example: 'ababaca' },
+  help: '主串最多 120 个字符，模式串最多 48 个字符。结束一次匹配后保留可重叠前缀，空模式返回 0。',
+  fields: [['i', '主串下标'], ['j', '模式串下标'], ['jump', '回退到'], ['matches', '匹配位置']],
+};
 const configs = {
   'bracket-matching': { chapter: 3, title: '括号匹配', field: 'text', label: '待检查字符串', example: '([{}])',
     help: '最多 120 个字符。检查 ()、[]、{}，其余字符原位跳过。',
@@ -14,10 +20,8 @@ const configs = {
     secondary: { label: '模式串', example: 'aa' },
     help: '主串最多 120 个字符，模式串最多 48 个字符。下标从 0 开始，空模式返回 0。',
     fields: matchFields },
-  kmp: { chapter: 4, title: 'KMP 模式匹配', field: 'text', label: '主串', example: 'abababaca',
-    secondary: { label: '模式串', example: 'ababaca' }, modes: [['next', '改进前 · next'], ['nextval', '改进后 · nextval']],
-    help: '主串最多 120 个字符，模式串最多 48 个字符。结束一次匹配后保留可重叠前缀，空模式返回 0。',
-    fields: [['i', '主串下标'], ['j', '模式串下标'], ['jump', '回退到'], ['matches', '匹配位置']] },
+  kmp: { ...kmp, title: 'KMP 改进前（next）', fixedMode: 'next' },
+  'kmp-nextval': { ...kmp, title: 'KMP 改进后（nextval）', fixedMode: 'nextval' },
   'expression-dag': { chapter: 6, title: '表达式有向无环图', field: 'expression', label: '中缀表达式', example: '(2+3)*(2+3)',
     help: expressionHelp + '相同子表达式共享节点，两个操作数的顺序参与判断。',
     fields: [['currentNode', '当前节点'], ['root', '根节点'], ['stack', '构图栈'], ['order', '求值顺序']] },
@@ -43,5 +47,6 @@ export function readFInput(config, value, other, mode) {
     });
     return { nodes, edges, directed: true };
   }
-  return { [config.field]: value, ...(config.secondary ? { pattern: other } : {}), ...(config.modes ? { mode } : {}) };
+  const selectedMode = config.fixedMode ?? (config.modes ? mode : undefined);
+  return { [config.field]: value, ...(config.secondary ? { pattern: other } : {}), ...(selectedMode === undefined ? {} : { mode: selectedMode }) };
 }

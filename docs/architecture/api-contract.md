@@ -96,6 +96,8 @@ F 包复用 `POST /api/algorithms/<算法标识>/runs`、运行查询、步骤�
 | `expression-dag` | `{expression}` | `{value,root,nodes,edges,order}`，依赖边包含左或右操作数角色 |
 | `critical-path` | `{nodes,edges,directed:true}`，活动为 `[起点,终点,工期]` | 总工期、时间表、活动时差、关键边和前八条关键路径 |
 
+工作台的 KMP 改进前、改进后入口共用 `kmp` 请求，分别传入 `mode: "next"` 与 `mode: "nextval"`。改进前的 `table-next` 步骤逐项写入 `variables.next`，该模式的 `variables.nextval` 始终为空。
+
 主串和模式串分别最多 120 和 48 个 Unicode 字符，下标从 0 开始。表达式最多 256 字符、64 个词元。表达式错误返回 `{error,index}`。关键路径最多 30 个顶点和 120 项活动，按千分之一的单位计算，接受 0 至 10 亿且最多三位小数的工期，保留平行活动。若有更多关键路径，`morePaths` 为 true。边界样例见 [F 包验收](../team/final/f-validation.md)。
 
 并查集接受 `{elements, operations}`，1 至 30 个唯一非空字符串元素，最多 60 个操作。操作格式为 `["union", x, y]` 或 `["find", x]`，引用未知元素时返回 400。空操作序列可运行。运行保存输入快照 `input`，步骤使用现有引擎的 `parent`、`rank`、`setCount`、`currentOp` 和 `findPath`。工作台使用父节点表，单步、回看、源码高亮和问答共用当前步骤；树形动画待接入。

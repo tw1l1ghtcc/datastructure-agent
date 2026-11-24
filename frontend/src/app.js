@@ -296,7 +296,8 @@ async function start(event) {
         message('引擎模式不支持这段代码（' + engineError.message + '），已回退到极简模式。', true);
       }
     } else {
-      result = validateRun(await createRun(input, controller.signal, algorithm), algorithm);
+      const runAlgorithm = selectedC()?.runAlgorithm ?? algorithm;
+      result = validateRun(await createRun(input, controller.signal, runAlgorithm), runAlgorithm);
     }
     if(ticket!==generation)return;
     if (structured) clearRun({ keepRequest: true });

@@ -64,20 +64,18 @@ try {
         last.variables.nodes.filter(node => node.leaf && node.next != null).length);
     }
     if (algorithm === 'multiway-merge') {
-      assert.deepEqual(await animated.locator('[data-layer="c-output"] [data-avc-key^="val-"] text').allTextContents(),
+      assert.deepEqual(await animated.locator('[data-layer="c-output"] [data-avc-key^="gv-"]').allTextContents(),
         run.result.map(String));
     }
-    const tableText=await page.locator('.c-state-tables').innerText();
-    assert.doesNotMatch(tableText,/undefined|NaN/);
+    const tables = animated.locator('.c-state-tables');
     if (algorithm === 'optimal-merge-tree') {
-      const state = page.locator('.c-state-tables');
-      assert.deepEqual(await state.locator('caption').allTextContents(), ['候选段']);
-      const rows = await state.locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent)));
-      assert.deepEqual(rows, last.variables.candidates.map(id => [
-        String(id), String(last.variables.nodes.find(node => node.id === id).weight),
-      ]));
+      assert.equal(await tables.count(), 0);
+      assert.match(await page.locator('[data-explain-host]').innerText(), /总代价 17/);
+    } else {
+      const tableText = await tables.innerText();
+      assert.doesNotMatch(tableText, /undefined|NaN/);
+      if (tree) assert.match(tableText, /查询结果.*查询键/s);
     }
-    if(tree) assert.match(tableText,/查询结果.*查询键/s);
     await page.click('#prevBtn');
     assert.equal(await page.locator('#code-lines .active').count(),1);
     assert.equal(await page.locator('[data-explain-host] .bsviz-caption').textContent(), run.steps.at(-2).description);
@@ -134,6 +132,178 @@ try {
   assert.equal(await treeSvg.locator('[data-avc-key^="x-"] [data-role="arrow"]').count(),
     large.result.nodes.filter(node => node.leaf && node.next != null).length);
   assert.ok(await page.locator('[data-viz-body]').evaluate(body => body.scrollWidth > body.clientWidth));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await selectWorkbenchAlgorithm(page, 'optimal-merge-tree');
+  const startOptimal = async weights => {
+    await page.fill('#c-data', weights.join(','));
+    const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/optimal-merge-tree/runs'));
+    await page.click('#startBtn');
+    const response = await pending;
+    assert.equal(response.status(), 200);
+    await page.locator('#c-edit').waitFor();
+    return response.json();
+  };
+  const weights = Array.from({ length: 64 }, (_, index) => index % 3 === 0 ? 0 : 1);
+  weights[0] = Number.MAX_SAFE_INTEGER - 10000;
+  const optimal = await startOptimal(weights);
+  const candidates = page.locator('[data-layer="c-candidates"] svg');
+  const forest = page.locator('[data-layer="c-merge-tree"] svg');
+  const queueViewport = page.locator('[data-layer="c-candidates"] .avc-svg-wrap');
+  const assertCandidates = async index => {
+    const { nodes, candidates: ids } = optimal.steps[index].variables;
+    assert.deepEqual(await candidates.locator('[data-avc-key^="idx-"]').allTextContents(), ids.map(id => '#' + id));
+    assert.deepEqual(await candidates.locator('[data-avc-key^="gv-"]').allTextContents(), ids.map(id => String(nodes[id].weight)));
+    assert.equal(await page.locator('[data-viz-engine="plus-c"] .c-state-tables').count(), 0);
+  };
+  await assertCandidates(0);
+  assert.equal(await queueViewport.getAttribute('tabindex'), '0');
+  assert.ok(await queueViewport.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop > 0;
+  }));
+  await page.click('#nextBtn');
+  await assertCandidates(1);
+  assert.equal(await queueViewport.evaluate(element => element.scrollTop), 0);
+  assert.deepEqual(optimal.steps[1].variables.selected, [3, 6]);
+  for (const id of [3, 6]) {
+    assert.equal(await forest.locator('[data-avc-key="n-' + id + '"] rect').getAttribute('stroke-width'), '2');
+  }
+  await page.click('#nextBtn');
+  await assertCandidates(2);
+  for (const [child, tag] of [[3, 'L'], [6, 'R']]) {
+    assert.equal(await forest.locator('[data-avc-key="e-64-' + child + '"]').count(), 1);
+    assert.equal(await forest.locator('[data-avc-key="et-' + child + '"]').textContent(), tag);
+  }
+  await page.click('#prevBtn');
+  await assertCandidates(1);
+  assert.equal(await forest.locator('[data-avc-key="n-64"]').count(), 0);
+  await page.locator('[data-tl-ruler]').press('End');
+  await assertCandidates(optimal.steps.length - 1);
+  assert.equal(await forest.locator('[data-avc-key^="n-"]').count(), 127);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+  for (const input of [[], [7]]) {
+    await page.click('#c-edit');
+    const run = await startOptimal(input);
+    await page.locator('[data-tl-ruler]').press('End');
+    assert.equal(run.result.cost, 0);
+    assert.equal(await forest.locator('[data-avc-key^="n-"]').count(), input.length);
+    assert.deepEqual(await candidates.locator('[data-avc-key^="gv-"]').allTextContents(), input.map(String));
+  }
+
+  await selectWorkbenchAlgorithm(page, 'multiway-merge');
+  const mergeRuns = Array.from({ length: 4 }, (_, run) =>
+    Array.from({ length: 32 }, (_, index) => index * 2 + run % 2 - 32));
+  mergeRuns[3][31] = Number.MAX_SAFE_INTEGER;
+  await page.fill('#c-data', mergeRuns.map(run => run.join(',')).join('\n'));
+  await page.fill('#c-param', '2');
+  const mergePending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/multiway-merge/runs'));
+  await page.click('#startBtn');
+  const mergeResponse = await mergePending;
+  assert.equal(mergeResponse.status(), 200);
+  const merge = await mergeResponse.json();
+  await page.locator('#c-edit').waitFor();
+  const timeline = page.locator('[data-tl-ruler]');
+  const output = page.locator('[data-layer="c-output"] svg');
+  const outputValues = output.locator('[data-avc-key^="gv-"]');
+  const mergeTables = page.locator('[data-viz-engine="plus-c"] .c-state-tables');
+  const batchTable = mergeTables.locator('table').filter({ has: page.locator('caption', { hasText: /^本批归并$/ }) });
+  const assertMergeStep = async index => {
+    const step = merge.steps[index];
+    assert.equal(await timeline.getAttribute('aria-valuenow'), String(index + 1));
+    assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'), step.lineId);
+    assert.deepEqual(await outputValues.allTextContents(), step.variables.output.map(String));
+  };
+  await timeline.press('End');
+  assert.deepEqual(merge.result, mergeRuns.flat().sort((a, b) => a - b));
+  assert.equal(merge.result.length, 128);
+  assert.equal(merge.steps.at(-1).variables.pass, 2);
+  await assertMergeStep(merge.steps.length - 1);
+  const outputViewport = page.locator('[data-layer="c-output"] .avc-svg-wrap');
+  assert.equal(await outputViewport.getAttribute('tabindex'), '0');
+  assert.ok(await outputViewport.evaluate(element => element.scrollTop > 0));
+  await timeline.press('ArrowLeft');
+  await assertMergeStep(merge.steps.length - 2);
+  assert.equal(await outputViewport.getAttribute('tabindex'), null);
+  await timeline.press('ArrowLeft');
+  await assertMergeStep(merge.steps.length - 3);
+  assert.deepEqual(await batchTable.locator('tbody td:first-child').allTextContents(), ['各段读取位置', '本趟已生成段']);
+  assert.equal(await mergeTables.locator('caption', { hasText: /^当前有序段$/ }).count(), 1);
+  await timeline.press('ArrowLeft');
+  await assertMergeStep(merge.steps.length - 4);
+  const lastWrite = output.locator('[data-avc-key="g-127"] rect');
+  assert.equal(await lastWrite.getAttribute('stroke-width'), '2');
+  assert.ok(await lastWrite.evaluate(rect => {
+    const viewport = rect.closest('.avc-svg-wrap').getBoundingClientRect();
+    const cell = rect.getBoundingClientRect();
+    return cell.top >= viewport.top - 1 && cell.bottom <= viewport.bottom + 1;
+  }));
+  await timeline.press('ArrowLeft');
+  await assertMergeStep(merge.steps.length - 5);
+  assert.equal(await lastWrite.count(), 0);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+  await selectWorkbenchAlgorithm(page, 'replacement-selection');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const firstRun = Array(64).fill(10);
+  const laterValues = Array.from({ length: 64 }, (_, index) => index % 2 ? -3 : -4);
+  laterValues[63] = Number.MIN_SAFE_INTEGER;
+  await page.fill('#c-data', [...firstRun, ...laterValues].join(','));
+  await page.fill('#c-param', '64');
+  const replacementPending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/replacement-selection/runs'));
+  await page.click('#startBtn');
+  const replacementResponse = await replacementPending;
+  assert.equal(replacementResponse.status(), 200);
+  const replacement = await replacementResponse.json();
+  await page.locator('#c-edit').waitFor();
+  const buffer = id => page.locator('[data-layer="' + id + '"] svg');
+  const completed = page.locator('.c-state-tables table').filter({ has: page.locator('caption', { hasText: /^已完成段$/ }) });
+  const assertReplacementStep = async index => {
+    const step = replacement.steps[index];
+    assert.equal(await timeline.getAttribute('aria-valuenow'), String(index + 1));
+    assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'), step.lineId);
+    for (const [id, entries] of [['c-active', step.variables.active], ['c-frozen', step.variables.frozen]]) {
+      assert.deepEqual(await buffer(id).locator('[data-avc-key^="gv-"]').allTextContents(), entries.map(entry => String(entry.value)));
+      assert.deepEqual(await buffer(id).locator('[data-avc-key^="idx-"]').allTextContents(), entries.map(entry => '#' + entry.index));
+    }
+    assert.deepEqual(await buffer('c-current-run').locator('[data-avc-key^="gv-"]').allTextContents(), step.variables.currentRun.map(String));
+    assert.deepEqual(await completed.locator('tbody td:nth-child(2)').allTextContents(),
+      step.variables.runs.map(run => run.join('、')));
+    assert.equal(await page.locator('.c-state-tables caption', { hasText: /^缓冲区$/ }).count(), 0);
+  };
+  await timeline.press('ArrowRight');
+  await assertReplacementStep(1);
+  assert.equal(replacement.steps[1].variables.active.length, 64);
+  await timeline.press('End');
+  await assertReplacementStep(replacement.steps.length - 1);
+  assert.deepEqual(replacement.result, [firstRun, [...laterValues].sort((a, b) => a - b)]);
+  assert.equal(await buffer('c-current-run').count(), 0);
+  const lastFreeze = replacement.steps.findLastIndex(step => step.event === 'freeze');
+  for (let index = replacement.steps.length - 1; index > lastFreeze; index--) await timeline.press('ArrowLeft');
+  await assertReplacementStep(lastFreeze);
+  assert.equal(replacement.steps[lastFreeze].variables.frozen.length, 64);
+  const frozenLast = buffer('c-frozen').locator('[data-avc-key="g-63"] rect');
+  assert.equal(await frozenLast.getAttribute('stroke-width'), '2');
+  assert.ok(await frozenLast.evaluate(rect => {
+    const container = rect.closest('.avc-svg-wrap');
+    const view = container.getBoundingClientRect();
+    const cell = rect.getBoundingClientRect();
+    return container.scrollTop > 0 && cell.top >= view.top - 1 && cell.bottom <= view.bottom + 1;
+  }), 'the newly frozen element is in view');
+  await timeline.press('ArrowRight');
+  await assertReplacementStep(lastFreeze + 1);
+  assert.equal(await completed.locator('tbody tr').count(), 1);
+  await timeline.press('ArrowRight');
+  await assertReplacementStep(lastFreeze + 2);
+  assert.equal(await buffer('c-active').locator('[data-avc-key="idx-0"]').textContent(), '#127');
+  await timeline.press('ArrowLeft');
+  await timeline.press('ArrowLeft');
+  await timeline.press('ArrowLeft');
+  await assertReplacementStep(lastFreeze - 1);
+  assert.equal(await frozenLast.count(), 0);
+  assert.equal(await buffer('c-current-run').locator('[data-avc-key="g-63"] rect').getAttribute('stroke-width'), '2');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 
   await selectWorkbenchAlgorithm(page,'binary-search');

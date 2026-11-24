@@ -1,7 +1,6 @@
 import { gridLayer, linkLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createMatrixAnimation } from './e-matrix-animation.js';
-import { createEStateTable } from './e-state-table.js';
-import { createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
+import { createTraceAnimation, indexedCard, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
 const fullCanvasLabels = new Map([
@@ -124,30 +123,36 @@ function listFrame(step, previous, fitViewport) {
 function radixFrame(step, previous) {
   const { cnt, exp, tmp } = step.variables;
   const old = previous?.variables;
-  const changed = old?.exp === exp && old?.cnt ? cnt?.findIndex((value, i) => value !== old.cnt[i]) : undefined;
-  const placed = step.event === 'place' ? tmp?.findIndex((value, i) => value !== old?.tmp?.[i]) : undefined;
-  const layers = [sequenceLayer('e-array', step.done ? '排序结果' : '当前数组', step.array)];
-  if (cnt) layers.push(sequenceLayer('e-buckets', '桶计数 · 位权 ' + exp, cnt, { swap: [changed] }));
-  if (tmp) layers.push(sequenceLayer('e-output', '本轮回填', tmp, { added: [placed] }));
+  const layers = [indexedCard('e-array', step.done ? '排序结果' : '当前数组', step.array)];
+  if (cnt) {
+    const changed = old?.cnt && old.exp === exp ? cnt.findIndex((value, i) => value !== old.cnt[i]) : -1;
+    layers.push(indexedCard('e-buckets', '桶计数 · 位权 ' + exp, cnt, { swap: changed < 0 ? [] : [changed] }));
+  }
+  if (tmp) {
+    const placed = step.event === 'place' ? tmp.findIndex((value, i) => value !== old?.tmp?.[i]) : -1;
+    layers.push(indexedCard('e-output', '本轮回填', tmp.map(value => value ?? '—'), { added: placed < 0 ? [] : [placed] }));
+  }
   return layers;
 }
 
 function countingFrame(run, step, init) {
-  const layers = [sequenceLayer('e-array', '输入数组', step.array)];
+  const layers = [indexedCard('e-array', '输入数组', step.array)];
   const snapshot = countingSnapshot(run, step, init);
-  if (!snapshot) {
-    if (step.done) layers.push(sequenceLayer('e-output', '输出数组', step.result ?? []));
-    return layers;
+  const { countDiff } = step.variables;
+  const output = step.variables.output ?? (step.done ? step.result ?? [] : null);
+  if (snapshot) {
+    const { min, counts, current } = snapshot;
+    const size = 21;
+    const first = windowStart(counts.length, size, current);
+    const shown = counts.slice(first, first + size);
+    const range = counts.length > size ? ` · 下标 ${first}–${first + shown.length - 1}，共 ${counts.length} 项` : '';
+    layers.push(indexedCard('e-counts', '计数（格下为数值）' + range, shown,
+      { swap: countDiff ? [countDiff.index - first] : [] }, shown.map((_, offset) => min + first + offset)));
   }
-  const { min, counts, current } = snapshot;
-  const v = step.variables;
-  layers.push(sequenceLayer('e-counts', '计数表（列标题为对应数值）', counts,
-    { swap: [v.countDiff?.index] }, { first: windowStart(counts.length, 10, current), indexBase: min }));
-  const out = v.output;
-  if (out) {
+  if (output) {
     const previous = run.steps[step.stepIndex - 1]?.variables.output;
-    const placed = step.event === 'place_output' ? out.findIndex((value, i) => value !== (previous?.[i] ?? null)) : -1;
-    layers.push(sequenceLayer('e-output', '输出数组', out, { added: [placed] }));
+    const placed = step.event === 'place_output' ? output.findIndex((value, i) => value !== (previous?.[i] ?? null)) : -1;
+    layers.push(indexedCard('e-output', '输出数组', output.map(value => value ?? '—'), { added: placed < 0 ? [] : [placed] }));
   }
   return layers;
 }
@@ -163,6 +168,5 @@ export function createEAnimation(host, explainHost, run, config) {
     radix: step => radixFrame(step, previous(step)),
     counting: step => countingFrame(run, step, init),
   };
-  const stateTable = fillViewport ? null : createEStateTable(run, config);
-  return createTraceAnimation(host, explainHost, stateTable, frames[config.view], 'e', { run, config, fillViewport });
+  return createTraceAnimation(host, explainHost, null, frames[config.view], 'e', { run, config, fillViewport });
 }

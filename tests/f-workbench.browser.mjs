@@ -14,10 +14,10 @@ const cases = [
   { id: 'bracket-matching', result: true, field: 'matched', conclusion: /括号全部匹配/ },
   { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], conclusion: /转换完成/ },
   { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', conclusion: /表达式结果为 -8/ },
-  { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
-  { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
+  { id: 'naive-string-match', result: [0,1,2] },
+  { id: 'kmp', mode: 'nextval', result: [2] },
   { id: 'expression-evaluation', mode: 'infix', result: -8, field: 'value', conclusion: /表达式结果为 -8/ },
-  { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/, conclusion: /根节点结果为 25/ },
+  { id: 'expression-dag', result: 25, field: 'value', conclusion: /根节点结果为 25/ },
   { id: 'critical-path', result: 5, field: 'duration', caption: /关键路径/, conclusion: /总工期为 5/ },
 ];
 
@@ -37,6 +37,16 @@ async function assertScrolledTo(cell) {
   assert.ok(bounds.scroll > 0 && bounds.left >= bounds.viewLeft && bounds.right <= bounds.viewRight + 1, JSON.stringify(bounds));
 }
 
+async function startStringMatch(page, algorithm, text, pattern) {
+  await page.fill('#c-data', text);
+  await page.fill('#f-secondary', pattern);
+  const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/' + algorithm + '/runs'));
+  await page.click('#startBtn');
+  const response = await pending;
+  assert.equal(response.status(), 200);
+  return response.json();
+}
+
 async function assertAnimation(page, run, step) {
   const stage = page.locator('[data-viz-engine="plus-f"] .avc-svg');
   assert.ok(await stage.count(), step.algorithm);
@@ -47,15 +57,10 @@ async function assertAnimation(page, run, step) {
     assert.deepEqual(await indices(page, 'brackets'), v.stack.map(item => String(item.i)));
   }
   if (v.operators && step.algorithm !== 'expression-evaluation') {
-    const full = step.algorithm === 'infix-to-postfix';
-    const operators = full ? v.operators : v.operators.slice(-10);
-    const output = full ? v.output : v.output.slice(-10);
-    assert.deepEqual(await cells(page, 'operators'), operators.map(token => token.text));
-    assert.deepEqual(await cells(page, 'postfix'), output.map(token => token.text));
-    if (full) {
-      assert.deepEqual(await indices(page, 'operators'), operators.map(token => String(token.index)));
-      assert.deepEqual(await indices(page, 'postfix'), output.map(token => String(token.index)));
-    }
+    assert.deepEqual(await cells(page, 'operators'), v.operators.map(token => token.text));
+    assert.deepEqual(await cells(page, 'postfix'), v.output.map(token => token.text));
+    assert.deepEqual(await indices(page, 'operators'), v.operators.map(token => String(token.index)));
+    assert.deepEqual(await indices(page, 'postfix'), v.output.map(token => String(token.index)));
   }
   if (step.algorithm === 'expression-evaluation') {
     const boundary = run.steps.findIndex(frame => frame.lineId === 'postfix');
@@ -75,18 +80,19 @@ async function assertAnimation(page, run, step) {
   }
   if (step.algorithm === 'naive-string-match' || step.algorithm === 'kmp') {
     assert.ok(await layer(page, 'match').count());
-    assert.deepEqual(await cells(page, 'matches'), v.matches.slice(-10).map(display));
-    if (v.mode && Array.from(run.input.pattern).length <= 10) {
-      assert.deepEqual(await cells(page, 'jump-table'), Array.from(run.input.pattern, (_, index) => display(v[v.mode][index])));
+    assert.deepEqual(await cells(page, 'matches'), v.matches.map(display));
+    if (v.mode) {
+      const expected = Array.from(run.input.pattern, (_, index) => [v.prefix[index], v.next[index], v.nextval[index]].map(display)).flat();
+      assert.deepEqual((await cells(page, 'kmp-table')).filter((_, index) => index % 4 !== 0), expected);
     }
   }
   if (step.algorithm === 'expression-dag' && v.nodes.length) {
     const graph = layer(page, 'expression-dag');
     assert.equal(await graph.locator('[data-avc-key^="n-f"]').count(), v.nodes.length);
     assert.equal(await graph.locator('[data-avc-key^="e-f"]').count(), v.edges.length);
-    if (step.done) {
+    if (step.done && !step.result.error) {
       const root = graph.locator('[data-avc-key="ns-f' + v.root + '"]');
-      assert.equal(await root.textContent(), '= ' + run.result.value);
+      assert.equal(await root.textContent(), '#' + v.root + ' = ' + run.result.value);
     }
   }
   if (step.algorithm === 'critical-path') {
@@ -96,6 +102,7 @@ async function assertAnimation(page, run, step) {
     if (step.done && !step.result.error) {
       const critical = graph.locator('[data-avc-key^="e-f"] :is(line, polyline):not([data-role="arrow"])[stroke="#0a6b4a"]');
       assert.equal(await critical.count(), v.criticalEdges.length);
+      assert.equal(await page.locator('.c-state-tables caption', { hasText: '事件时间' }).count(), 0);
     }
   }
 }
@@ -194,7 +201,7 @@ try {
       assert.deepEqual(await cells(page, 'postfix'), result);
     }
     if (id === 'naive-string-match' || id === 'kmp') {
-      assert.equal(await rows('匹配位置').locator('td').textContent(), result.join('、'));
+      assert.deepEqual(await cells(page, 'matches'), result.map(String));
     }
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
@@ -333,6 +340,143 @@ try {
     body.scrollLeft = body.scrollWidth;
     return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
   }), 'the graph scrolls within the workbench');
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const ruler = page.locator('[data-tl-ruler]');
+  await selectWorkbenchAlgorithm(page, 'naive-string-match');
+  const longText = '\t🙂' + 'a'.repeat(118);
+  const longPattern = 'a'.repeat(48);
+  const longMatch = await startStringMatch(page, 'naive-string-match', longText, longPattern);
+  assert.deepEqual(longMatch.result, Array.from({ length: 71 }, (_, index) => index + 2));
+  await assertStep(page, longMatch, 0);
+  const alignment = layer(page, 'match');
+  const alignmentRows = await alignment.locator('[data-avc-key^="gv-"]').evaluateAll(elements => {
+    const strings = [[], []];
+    for (const element of elements) {
+      const row = Number(element.dataset.avcKey.slice(3).split(',')[0]) % 4;
+      if (row < 2 && element.textContent) strings[row].push(element.textContent);
+    }
+    return strings;
+  });
+  assert.deepEqual(alignmentRows, [['制表符', '🙂', ...Array(118).fill('a')], Array(48).fill('a')]);
+  await ruler.press('ArrowRight');
+  await ruler.press('ArrowRight');
+  await assertStep(page, longMatch, 2);
+  assert.equal(longMatch.steps[2].variables.equal, false);
+  assert.equal(await alignment.locator('[data-avc-key="g-0,0"] rect').getAttribute('stroke-width'), '2');
+  await ruler.press('End');
+  await assertStep(page, longMatch, longMatch.steps.length - 1);
+  assert.match(await layer(page, 'matches').getAttribute('aria-label'), /71 处/);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, longMatch, longMatch.steps.length - 2);
+  assert.equal(await layer(page, 'matches').locator('[data-avc-key="g-70"] rect').getAttribute('stroke-width'), '2');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, longMatch, longMatch.steps.length - 3);
+  assert.equal(await layer(page, 'matches').locator('[data-avc-key="gv-70"]').count(), 0);
+  assert.equal(await alignment.locator('[data-avc-key="gv-75,5"]').textContent(), '119');
+  assert.equal(await alignment.locator('[data-avc-key="gv-78,5"]').textContent(), '47');
+  for (const row of [76, 77]) {
+    const cell = alignment.locator('[data-avc-key="g-' + row + ',5"] rect');
+    assert.equal(await cell.getAttribute('stroke-width'), '2');
+    assert.ok(await cell.evaluate(rect => {
+      const viewport = rect.closest('.avc-svg-wrap');
+      const r = rect.getBoundingClientRect();
+      const v = viewport.getBoundingClientRect();
+      return viewport.scrollTop > 0 && r.top >= v.top - 1 && r.bottom <= v.bottom + 1;
+    }), 'both compared cells are visible');
+  }
+  for (const [pattern, result] of [['', [0]], ['aa', []]]) {
+    await page.click('#c-edit');
+    const run = await startStringMatch(page, 'naive-string-match', 'a', pattern);
+    await ruler.press('End');
+    await assertStep(page, run, run.steps.length - 1);
+    assert.deepEqual(run.result, result);
+    assert.match(await layer(page, 'matches').getAttribute('aria-label'), new RegExp(result.length + ' 处'));
+  }
+
+  await selectWorkbenchAlgorithm(page, 'kmp');
+  const preprocessing = layer(page, 'kmp-table');
+  for (const [mode, jump] of [['next', 1], ['nextval', -1]]) {
+    if (mode === 'nextval') await page.click('#c-edit');
+    await page.selectOption('#f-mode', mode);
+    const run = await startStringMatch(page, 'kmp', 'aab', 'aaa');
+    const fallback = run.steps.findIndex(step => step.event === 'fallback');
+    for (let index = 0; index < fallback; index++) await ruler.press('ArrowRight');
+    await assertStep(page, run, fallback);
+    assert.deepEqual(run.result, []);
+    assert.equal(run.steps[fallback].variables.jump, jump);
+    assert.match(await preprocessing.getAttribute('aria-label'), new RegExp('当前使用 ' + mode + '$'));
+    assert.deepEqual(await cells(page, 'kmp-table'), ['a', '0', '-1', '-1', 'a', '1', '0', '-1', 'a', '2', '1', '-1']);
+    assert.equal(await preprocessing.locator('[data-avc-key="g-2,0"] rect').getAttribute('stroke-width'), '2');
+    if (jump >= 0) {
+      const destination = preprocessing.locator('[data-avc-key="g-1,0"] rect');
+      assert.equal(await destination.getAttribute('stroke-width'), '2');
+      await ruler.press('ArrowLeft');
+      await assertStep(page, run, fallback - 1);
+      assert.equal(await destination.getAttribute('stroke-width'), '1');
+    }
+  }
+  await page.click('#c-edit');
+  const longKmp = await startStringMatch(page, 'kmp', longText, longPattern);
+  assert.deepEqual(longKmp.result, longMatch.result);
+  await assertStep(page, longKmp, 0);
+  assert.equal(await preprocessing.locator('[data-avc-key="gv-47,3"]').textContent(), '—');
+  await ruler.press('End');
+  await assertStep(page, longKmp, longKmp.steps.length - 1);
+  assert.equal(await preprocessing.locator('[data-avc-key="gv-47,1"]').textContent(), '47');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, longKmp, longKmp.steps.length - 2);
+  assert.ok(await preprocessing.evaluate(svg => svg.parentElement.scrollTop > 0));
+  await ruler.press('ArrowLeft');
+  await assertStep(page, longKmp, longKmp.steps.length - 3);
+  assert.equal(await layer(page, 'matches').locator('[data-avc-key="gv-70"]').count(), 0);
+  await page.click('#c-edit');
+  const emptyKmp = await startStringMatch(page, 'kmp', 'a', '');
+  await ruler.press('End');
+  await assertStep(page, emptyKmp, emptyKmp.steps.length - 1);
+  assert.deepEqual(emptyKmp.result, [0]);
+  assert.equal(await preprocessing.count(), 0);
+
+  await selectWorkbenchAlgorithm(page, 'expression-dag');
+  const startDag = async expression => {
+    await page.fill('#c-data', expression);
+    const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/expression-dag/runs'));
+    await page.click('#startBtn');
+    const response = await pending;
+    assert.equal(response.status(), 200);
+    return response.json();
+  };
+  const wideDag = await startDag(Array(10).fill('(2147483647/3)').join(' + '));
+  await ruler.press('End');
+  await assertStep(page, wideDag, wideDag.steps.length - 1);
+  const dagGraph = layer(page, 'expression-dag');
+  const rootLabel = dagGraph.locator('[data-avc-key="ns-f' + wideDag.result.root + '"]');
+  const expectedValue = Array(10).fill(2147483647 / 3).reduce((sum, term) => sum + term, 0);
+  assert.equal(wideDag.result.value, expectedValue);
+  assert.equal(await rootLabel.textContent(), '#' + wideDag.result.root + ' = ' + expectedValue);
+  assert.equal(await dagGraph.locator('[data-avc-key="ns-f0"]').textContent(), '#0 = 2147483647');
+  assert.equal((await cells(page, 'postfix')).length, 39);
+  assert.ok(await dagGraph.evaluate(svg => {
+    const box = svg.querySelector('.avc-layer').getBBox();
+    const { width, height } = svg.viewBox.baseVal;
+    return box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height;
+  }), 'full cache labels fit the graph canvas');
+  assert.ok(await page.locator('[data-viz-body]').evaluate(body => {
+    body.scrollLeft = body.scrollWidth;
+    return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
+  }), 'a wide DAG scrolls within the desktop workbench');
+  await ruler.press('ArrowLeft');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wideDag, wideDag.steps.length - 3);
+  assert.equal(await rootLabel.textContent(), '#' + wideDag.result.root);
+
+  await page.click('#c-edit');
+  const badDag = await startDag('8/(2-2)');
+  await ruler.press('End');
+  await assertStep(page, badDag, badDag.steps.length - 1);
+  assert.match(await dagGraph.getAttribute('aria-label'), /除数为零.*下标 1/);
+  const failed = badDag.steps.at(-1).variables.nodes.find(node => node.token === '/');
+  assert.equal(await dagGraph.locator('[data-avc-key="n-f' + failed.id + '"] circle').getAttribute('stroke-width'), '2.4');
 
   assert.deepEqual(errors, []);
 } finally {

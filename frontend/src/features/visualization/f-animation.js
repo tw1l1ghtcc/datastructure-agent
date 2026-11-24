@@ -1,9 +1,11 @@
 import { graphLayer, gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createBracketAnimation, createExpressionEvaluationAnimation, createInfixToPostfixAnimation } from './f-sequence-animation.js';
-import { createFStateTable } from './f-state-table.js';
-import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
+import { createCriticalPathStateTable } from './f-state-table.js';
+import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer } from './trace-animation.js';
 
 const WINDOW_SIZE = 10;
+const MATCH_COLUMNS = 6;
+const MATCH_ROWS = 4;
 const charLabels = { ' ': '空格', '\t': '制表符', '\n': '换行', '\r': '回车' };
 const showChar = char => charLabels[char] ?? char;
 const nodeId = index => 'f' + index;
@@ -13,52 +15,110 @@ function tail(id, title, values, markTop = false) {
     { first: Math.max(0, values.length - WINDOW_SIZE) });
 }
 
-function expressionStacks(v) {
+function revealCell(host, layer, key) {
+  const svg = host.querySelector('[data-avc-svg="' + layer + '"]');
+  const viewport = svg?.parentElement;
+  if (!viewport) return;
+  if (viewport.scrollHeight > viewport.clientHeight) {
+    viewport.tabIndex = 0;
+    viewport.setAttribute('role', 'region');
+    viewport.setAttribute('aria-label', svg.getAttribute('aria-label'));
+  } else {
+    viewport.removeAttribute('tabindex');
+    viewport.removeAttribute('role');
+    viewport.removeAttribute('aria-label');
+  }
+  const cell = svg.querySelector('[data-avc-key="g-' + key + '"] rect');
+  if (!cell) return;
+  const bounds = cell.getBoundingClientRect();
+  const view = viewport.getBoundingClientRect();
+  if (bounds.top < view.top + 4) viewport.scrollTop += bounds.top - view.top - 4;
+  else if (bounds.bottom > view.bottom - 4) viewport.scrollTop += bounds.bottom - view.bottom + 4;
+}
+
+function tokenCard(id, title, tokens, roles) {
+  return tokens.length
+    ? indexedCard(id, title, tokens.map(token => token.text), roles, tokens.map(token => token.index))
+    : sequenceLayer(id, title, []);
+}
+
+function dagConversionLayers(step, previous) {
+  const { operators, output, nodes } = step.variables;
+  const appended = output.length > (previous?.variables.output.length ?? 0);
+  const title = step.result?.error && !nodes.length ? '已输出词元 · ' + step.result.error : '后缀序列（格下为原下标）';
   return [
-    tail('f-operators', '运算符栈（栈顶在右）', v.operators.map(token => token.text), true),
-    tail('f-postfix', '后缀序列', v.output.map(token => token.text)),
+    tokenCard('f-operators', '运算符栈（底到顶，格下为原下标）', operators, { focus2: [operators.length - 1] }),
+    tokenCard('f-postfix', title, output, { added: appended ? [output.length - 1] : [] }),
   ];
 }
 
-function matchFrame(text, pattern, step) {
-  const v = step.variables;
-  const comparing = Number.isInteger(v.i) && Number.isInteger(v.j);
-  const matched = step.event === 'match' || (step.done && v.matches.length > 0);
-  const start = v.start ?? (matched ? v.matches.at(-1) : comparing ? Math.max(0, v.i - v.j) : 0);
-  const focus = matched ? start + Math.max(0, pattern.length - 1) : v.i ?? start + (v.k ?? 0);
-  const length = Math.max(text.length, start + pattern.length);
-  const first = windowStart(length, WINDOW_SIZE, focus);
-  const indices = Array.from({ length: Math.min(length, WINDOW_SIZE) }, (_, i) => first + i);
-  const row = (values, offset = 0) => indices.map(i => values[i - offset] ?? '');
-  const values = indices.length ? [row(text), row(pattern, start)] : [];
-  const marked = indices.filter(i => matched && i >= start && i < start + pattern.length);
-  const caret = (r, i) => indices.includes(i) ? [r + ',' + (i - first)] : [];
-  const roles = {
-    done: marked.flatMap(i => [...caret(0, i), ...caret(1, i)]),
-    swap: !matched && comparing && v.j >= 0 && v.j < pattern.length
-      ? [...caret(0, v.i), ...caret(1, start + v.j)] : [],
-    focus2: !matched && !comparing ? caret(1, start + v.k) : [],
-  };
-  const cellW = Math.max(35, ...values.flat().map(char => char.length * 10 + 14));
-  const range = indices.length < length ? ' · 下标 ' + first + '–' + indices.at(-1) : '';
-  const layers = [gridLayer({
-    id: 'f-match', title: '主串与模式串' + range, values, roles,
-    colLabels: indices.map(String), rowLabels: ['主串', '模式串'],
-    props: { canvasWidth: Math.max(320, 72 + (indices.length + 1) * cellW), canvasHeight: 160, cellW, cellH: 28 },
-  })];
-  if (v.mode) {
-    const current = v.k ?? v.j;
-    layers.push(sequenceLayer('f-jump-table', '跳转表 · ' + v.mode,
-      pattern.map((_, index) => v[v.mode][index]), { swap: [current], focus2: [v.jump] }));
-    if (v.k != null) layers.push(sequenceLayer('f-prefix', '最长真前后缀长度',
-      pattern.map((_, index) => v.prefix[index]), { swap: [v.k] }));
+// The first group shows main-string indices in the grid header.
+const matchCell = (index, row) => (Math.floor(index / MATCH_COLUMNS) * MATCH_ROWS + row - 1) + ',' + (index % MATCH_COLUMNS);
+
+function stringAlignment(step, patternLength) {
+  const { i, j, k, start, matches } = step.variables;
+  const matched = patternLength > 0 && (step.event === 'match' || (step.done && matches.length > 0));
+  const currentOffset = Number.isInteger(i) && Number.isInteger(j) ? Math.max(0, i - j) : 0;
+  const offset = start ?? (matched ? matches.at(-1) : currentOffset);
+  const focus = matched ? offset + patternLength - 1 : i ?? k ?? offset;
+  return { offset, matched, focus };
+}
+
+function kmpTable(pattern, step) {
+  const { mode, prefix, next, nextval, k, j, jump } = step.variables;
+  const cells = row => Number.isInteger(row) && row >= 0 && row < pattern.length
+    ? [0, 1, 2, 3].map(col => row + ',' + col) : [];
+  return gridLayer({
+    id: 'f-kmp-table', title: '预处理表 · 当前使用 ' + mode,
+    values: pattern.map((char, index) => [char, prefix[index] ?? '—', next[index] ?? '—', nextval[index] ?? '—']),
+    colLabels: ['字符', '前缀长度', 'next', 'nextval'],
+    roles: { swap: cells(k ?? j), focus2: cells(jump) },
+    props: { canvasWidth: 320, canvasHeight: Math.max(146, 72 + (pattern.length + 1) * 24), cellW: 50, cellH: 24 },
+  });
+}
+
+function stringMatchFrame(text, pattern, step) {
+  const { matches, i, j, k, jump, equal, mode } = step.variables;
+  const { offset, matched } = stringAlignment(step, pattern.length);
+  const length = Math.max(text.length, offset + pattern.length);
+  const values = [];
+  const rowLabels = [];
+  for (let first = 0; first < length; first += MATCH_COLUMNS) {
+    const indices = Array.from({ length: MATCH_COLUMNS }, (_, col) => first + col);
+    if (first > 0) {
+      values.push(indices.map(index => index < length ? index : ''));
+      rowLabels.push('下标');
+    }
+    values.push(
+      indices.map(index => text[index] ?? ''),
+      indices.map(index => pattern[index - offset] ?? ''),
+      indices.map(index => index >= offset && index < offset + pattern.length ? index - offset : ''),
+    );
+    rowLabels.push('主串', '模式串', '下标');
   }
-  layers.push(tail('f-matches', '已匹配的起点', v.matches));
-  return layers;
+  const compared = !matched && Number.isInteger(i) && Number.isInteger(j) && i >= 0 && i < text.length && j >= 0 && j < pattern.length
+    ? [matchCell(i, 1), matchCell(i, 2)] : [];
+  const patternCursors = [k, jump].filter(index => Number.isInteger(index) && index >= 0 && index < pattern.length);
+  const comparisonRole = equal === false || step.event === 'fallback' ? 'swap' : 'focus1';
+  const aligned = gridLayer({
+    id: 'f-match', title: '主串与模式串 · 对齐起点 ' + offset, values, rowLabels,
+    colLabels: Array.from({ length: MATCH_COLUMNS }, (_, col) => col < length ? String(col) : ''),
+    roles: {
+      [comparisonRole]: compared,
+      focus2: patternCursors.map(index => matchCell(offset + index, 2)),
+      done: matched ? pattern.flatMap((_, index) => [matchCell(offset + index, 1), matchCell(offset + index, 2)]) : [],
+    },
+    props: { canvasWidth: 320, canvasHeight: Math.max(150, 72 + (values.length + 1) * 24), cellW: 36, cellH: 24 },
+  });
+  const title = '匹配起点（' + matches.length + ' 处）';
+  const found = matches.length ? indexedCard('f-matches', title, matches, {
+    added: step.event === 'match' || step.event === 'empty' ? [matches.length - 1] : [],
+  }) : sequenceLayer('f-matches', title, []);
+  return mode && pattern.length ? [aligned, kmpTable(pattern, step), found] : [aligned, found];
 }
 
 // Derive display columns from the visible dependencies; event order and results come from the run.
-function placeGraph(nodes, edges) {
+function placeGraph(nodes, edges, columnWidth = 126) {
   const outgoing = new Map(nodes.map(({ id }) => [id, []]));
   const degree = new Map(nodes.map(({ id }) => [id, 0]));
   for (const { from, to } of edges) {
@@ -89,7 +149,7 @@ function placeGraph(nodes, edges) {
   return {
     nodes: [...columns.entries()].flatMap(([col, group]) =>
       group.map((node, row) => ({ ...node, x: (col + 0.5) / count, y: (row + 0.5) / group.length }))),
-    canvasWidth: Math.max(420, 86 + count * 126),
+    canvasWidth: Math.max(420, 86 + count * columnWidth),
     canvasHeight: Math.max(234, 84 + rows * 78),
   };
 }
@@ -121,35 +181,55 @@ function graphCard(id, title, layout, edges, roles) {
   });
 }
 
-function expressionDagFrame(v) {
-  const layers = expressionStacks(v);
+function expressionDagFrame(step, previous) {
+  const v = step.variables;
+  const layers = dagConversionLayers(step, previous);
   if (!v.nodes.length) return layers;
-  const nodes = v.nodes.map(node => ({
-    id: nodeId(node.id), label: compactLabel(node.token, 5),
-    sub: Object.hasOwn(v.cache, node.id) ? '= ' + compactLabel(v.cache[node.id], 12) : '#' + node.id,
-  }));
+  const nodes = v.nodes.map(node => {
+    const label = compactLabel(node.token, 5);
+    const number = '#' + node.id;
+    const sub = Object.hasOwn(v.cache, node.id) ? number + ' = ' + v.cache[node.id]
+      : label !== node.token ? number + ' · ' + node.token : number;
+    return { id: nodeId(node.id), label, sub, badge: v.root === node.id ? '根' : undefined };
+  });
+  const error = step.result?.error;
+  const current = error ? v.nodes.find(node => node.index === v.index)?.id : v.currentNode;
   const edges = routeEdges(v.edges.map(([from, to, role]) => ({
     from: nodeId(from), to: nodeId(to), w: role === '左操作数' ? '左' : '右',
-    state: to === v.currentNode ? 'active' : 'idle',
+    state: to === current ? 'active' : 'idle',
   })));
-  const graph = graphCard('f-expression-dag', '表达式依赖图（箭头指向使用节点）', placeGraph(nodes, edges), edges, {
-    swap: v.currentNode == null ? [] : [nodeId(v.currentNode)], done: v.order.map(nodeId),
+  const title = error ? '表达式依赖图 · ' + error : '表达式依赖图（箭头指向使用节点）';
+  const columnWidth = Math.max(126, ...nodes.map(node => node.sub.length * 6 + 20));
+  const graph = graphCard('f-expression-dag', title, placeGraph(nodes, edges, columnWidth), edges, {
+    swap: current == null ? [] : [nodeId(current)], done: v.order.map(nodeId),
   });
-  return [graph, tail('f-build-stack', '构图栈（节点编号，栈顶在右）', v.stack, true), ...layers];
+  const stack = indexedCard('f-build-stack', '构图栈（底到顶）', v.stack, { focus2: [v.stack.length - 1] });
+  return [graph, stack, ...layers];
 }
 
-function criticalPathFrames(input) {
+function eventTimes(variables, event) {
+  return '早 ' + (variables.earliest[event] ?? '—') + '　迟 ' + (variables.latest[event] ?? '—');
+}
+
+function criticalPathFrames({ input, steps }) {
   const ids = new Map(input.nodes.map((label, index) => [label, nodeId(index)]));
   const edges = routeEdges(input.edges.map(([from, to, weight]) =>
     ({ from: ids.get(from), to: ids.get(to), w: compactLabel(weight, 13) })));
-  const layout = placeGraph(input.nodes.map(label => ({ id: ids.get(label), label: compactLabel(label, 4), event: label })), edges);
+  const nodes = input.nodes.map(event => ({ id: ids.get(event), label: compactLabel(event, 4), event }));
+  let columnWidth = 126;
+  for (const step of steps) {
+    for (const event of input.nodes) {
+      columnWidth = Math.max(columnWidth, eventTimes(step.variables, event).length * 6 + 20);
+    }
+  }
+  const layout = placeGraph(nodes, edges, columnWidth);
   return step => {
     const v = step.variables;
     const critical = new Set(v.criticalEdges);
-    const timed = layout.nodes.map(node => ({
-      ...node,
-      sub: '早 ' + compactLabel(v.earliest[node.event], 8) + '　迟 ' + compactLabel(v.latest[node.event], 8),
-    }));
+    const timed = layout.nodes.map(node => {
+      const sub = eventTimes(v, node.event);
+      return { ...node, sub, fullLabel: node.event + ' · ' + sub };
+    });
     const activities = edges.map((edge, index) => ({
       ...edge, state: index === v.activityIndex ? 'active' : critical.has(index) ? 'tree' : 'idle',
     }));
@@ -166,15 +246,49 @@ function criticalPathFrames(input) {
 export function createFAnimation(host, explainHost, run, config) {
   const input = run.input;
   const text = Array.from(input.text ?? '', showChar);
+  const pattern = Array.from(input.pattern ?? '', showChar);
   if (run.algorithm === 'bracket-matching') return createBracketAnimation(host, explainHost, run, config, text);
   if (run.algorithm === 'infix-to-postfix') return createInfixToPostfixAnimation(host, explainHost, run, config);
   if (run.algorithm === 'expression-evaluation') return createExpressionEvaluationAnimation(host, explainHost, run, config);
-  const pattern = Array.from(input.pattern ?? '', showChar);
+  const stringMatch = step => stringMatchFrame(text, pattern, step);
   const frames = {
-    'naive-string-match': step => matchFrame(text, pattern, step),
-    kmp: step => matchFrame(text, pattern, step),
-    'expression-dag': step => expressionDagFrame(step.variables),
-    'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
+    'naive-string-match': stringMatch,
+    kmp: stringMatch,
+    'expression-dag': step => expressionDagFrame(step, run.steps[step.stepIndex - 1]),
+    'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(run) : null,
   };
-  return createTraceAnimation(host, explainHost, createFStateTable(config, run.algorithm, input), frames[run.algorithm], 'f', { run, config });
+  const followMatch = step => {
+    const { k, j, matches, mode } = step.variables;
+    const { focus } = stringAlignment(step, pattern.length);
+    revealCell(host, 'f-match', matchCell(focus, focus < MATCH_COLUMNS ? 1 : 0));
+    revealCell(host, 'f-match', matchCell(focus, 3));
+    if (mode) revealCell(host, 'f-kmp-table', (k ?? j ?? 0) + ',0');
+    revealCell(host, 'f-matches', matches.length - 1);
+  };
+  const follow = {
+    'naive-string-match': followMatch,
+    kmp: followMatch,
+    'expression-dag': step => {
+      const { operators, output } = step.variables;
+      revealCell(host, 'f-operators', operators.length - 1);
+      revealCell(host, 'f-postfix', output.length - 1);
+      revealCell(host, 'f-build-stack', step.variables.stack.length - 1);
+    },
+  }[run.algorithm];
+  const stateTable = follow ? null : createCriticalPathStateTable(input);
+  const animation = createTraceAnimation(host, explainHost, stateTable, frames[run.algorithm], 'f', { run, config });
+  if (!follow) return animation;
+  host.querySelector('[data-viz-engine="plus-f"] .trace-animation-stage').classList.add('f-scroll-cards');
+  return {
+    ...animation,
+    showStep(step) {
+      animation.showStep(step);
+      follow(step);
+    },
+    playEnterAnimation() {
+      animation.playEnterAnimation();
+      const step = animation.getStep();
+      if (step) follow(step);
+    },
+  };
 }

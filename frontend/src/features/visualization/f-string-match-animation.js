@@ -9,10 +9,16 @@ const inset = 24;
 const cellCenter = 50;
 const svgNamespace = 'http://www.w3.org/2000/svg';
 
-function createTileStrip(id, title, size) {
+function createTileStrip(id, title, size, emptyText) {
   const element = document.createElement('div');
-  element.className = 'f-kmp-tiles';
+  element.className = 'f-string-match-tiles';
   element.style.width = (size * pitch + inset) + 'px';
+  if (!size && emptyText) {
+    const empty = document.createElement('p');
+    empty.className = 'f-string-match-empty';
+    empty.textContent = emptyText;
+    element.append(empty);
+  }
   const stage = createStage(element, { fillViewport: true });
   return {
     element,
@@ -36,9 +42,9 @@ function createTileStrip(id, title, size) {
   };
 }
 
-function scrollTrack(className, label) {
+function scrollTrack(label) {
   const track = document.createElement('div');
-  track.className = className;
+  track.className = 'f-string-match-track';
   track.tabIndex = 0;
   track.setAttribute('role', 'region');
   track.setAttribute('aria-label', label);
@@ -47,7 +53,7 @@ function scrollTrack(className, label) {
 
 function label(text) {
   const element = document.createElement('span');
-  element.className = 'f-kmp-label';
+  element.className = 'f-string-match-label';
   element.textContent = text;
   return element;
 }
@@ -66,50 +72,73 @@ function alignment(step, before, patternLength) {
   if (matchedAt != null && patternLength) return { offset: matchedAt, prefix: patternLength, focus: matchedAt + patternLength - 1 };
   const cursor = step.done ? before ?? v : v;
   const j = (step.event === 'fallback' || step.done) ? cursor.jump ?? cursor.j : cursor.j;
-  if (!Number.isInteger(cursor.i)) return { offset: 0, prefix: 0, focus: cursor.k };
-  return { offset: cursor.i - j, prefix: Math.max(0, j), i: cursor.i, j, focus: cursor.i };
+  if (!Number.isInteger(cursor.i)) return { offset: cursor.start ?? 0, prefix: 0, focus: cursor.k ?? cursor.start };
+  return { offset: cursor.start ?? cursor.i - j, prefix: Math.max(0, j), i: cursor.i, j, focus: cursor.i };
 }
 
-export function createKmpAnimation(host, explainHost, run, config, text, pattern) {
-  const mode = run.input.mode ?? 'next';
-  const title = config.modes.find(([value]) => value === mode)[1] + ' 数组';
+function createJumpRow(mode, title, pattern) {
   const element = document.createElement('div');
-  element.className = 'f-kmp-animation';
+  element.className = 'f-kmp-next';
+  const track = scrollTrack(title);
+  const tiles = createTileStrip('f-kmp-next', title, pattern.length, '没有跳转项');
+  track.append(tiles.element);
+  element.append(label(title), track);
+  return {
+    element,
+    show(step) {
+      const v = step.variables;
+      const lookup = v.k ?? v.j;
+      tiles.show(pattern.map((_, index) => v[mode][index] ?? '—'), {
+        swap: Number.isInteger(lookup) && !step.done ? [lookup] : [],
+        focus2: step.event === 'fallback' && v.jump >= 0 ? [v.jump] : [],
+      }, pattern.map((char, index) => `${index} · ${char} · 前缀长度 ${v.prefix[index] ?? '—'} · next ${v.next[index] ?? '—'} · nextval ${v.nextval[index] ?? '—'}`));
+      if (step.stepIndex === 0) track.scrollLeft = 0;
+      else reveal(track, lookup);
+    },
+    clear: tiles.clear,
+  };
+}
+
+export function createStringMatchAnimation(host, explainHost, run, config, text, pattern) {
+  const kmp = run.algorithm === 'kmp';
+  const id = kmp ? 'f-kmp' : 'f-naive';
+  const element = document.createElement('div');
+  element.className = 'f-string-match-animation';
   element.dataset.vizEngine = 'plus-f';
-  const main = createTileStrip('f-kmp-text', '主串', text.length);
-  const patternStrip = createTileStrip('f-kmp-pattern', '模式串', pattern.length);
-  const jumps = createTileStrip('f-kmp-next', title, pattern.length);
+  const main = createTileStrip(id + '-text', '主串', text.length, '主串为空');
+  const patternStrip = createTileStrip(id + '-pattern', '模式串', pattern.length, '模式串为空');
   const aligned = document.createElement('div');
-  aligned.className = 'f-kmp-alignment';
+  aligned.className = 'f-string-match-alignment';
   const labels = document.createElement('div');
-  labels.className = 'f-kmp-row-labels';
+  labels.className = 'f-string-match-row-labels';
   labels.append(label('主串'), label('模式串'));
-  const track = scrollTrack('f-kmp-track', '主串与模式串对齐');
+  const track = scrollTrack('主串与模式串对齐');
   const strip = document.createElement('div');
-  strip.className = 'f-kmp-strip';
+  strip.className = 'f-string-match-strip';
   const connector = document.createElement('span');
-  connector.className = 'f-kmp-connector';
+  connector.className = 'f-string-match-connector';
   connector.setAttribute('aria-hidden', 'true');
-  patternStrip.element.classList.add('f-kmp-pattern');
+  patternStrip.element.classList.add('f-string-match-pattern');
   strip.append(main.element, patternStrip.element, connector);
   track.append(strip);
   aligned.append(labels, track);
 
   const matches = document.createElement('div');
-  matches.className = 'f-kmp-matches';
-  const table = document.createElement('div');
-  table.className = 'f-kmp-next';
-  const jumpTrack = scrollTrack('f-kmp-track', title);
-  const noPattern = label('模式串为空');
-  noPattern.hidden = pattern.length > 0;
-  jumpTrack.append(jumps.element, noPattern);
-  table.append(label(title), jumpTrack);
-  element.append(aligned, matches, table);
+  matches.className = 'f-string-match-matches';
+  element.append(aligned, matches);
+  const strips = [main, patternStrip];
+  let jumps;
+  if (kmp) {
+    const mode = run.input.mode ?? 'next';
+    const title = config.modes.find(([value]) => value === mode)[1] + ' 数组';
+    jumps = createJumpRow(mode, title, pattern);
+    strips.push(jumps);
+    element.append(jumps.element);
+  }
   host.append(element);
 
   const { explain, caption, status } = createExplanationPanel();
   explainHost.replaceChildren(explain);
-  const strips = [main, patternStrip, jumps];
   let current = null;
 
   function render(step, slide) {
@@ -131,22 +160,11 @@ export function createKmpAnimation(host, explainHost, run, config, text, pattern
     connector.style.left = (cellCenter + i * pitch) + 'px';
     connector.classList.toggle('is-mismatch', failed);
 
-    const lookup = v.k ?? v.j;
-    const fallback = step.event === 'fallback';
-    jumps.show(pattern.map((_, index) => v[mode][index] ?? '—'), {
-      swap: Number.isInteger(lookup) && !step.done ? [lookup] : [],
-      focus2: fallback && v.jump >= 0 ? [v.jump] : [],
-    }, pattern.map((char, index) => `${index} · ${char} · 前缀长度 ${v.prefix[index] ?? '—'} · next ${v.next[index] ?? '—'} · nextval ${v.nextval[index] ?? '—'}`));
-
+    jumps?.show(step);
     matches.textContent = '匹配起点' + (v.matches.length ? '  ' + v.matches.join('、') : '  暂无');
     matches.dataset.positions = v.matches.join(',');
-    if (step.stepIndex === 0) {
-      track.scrollLeft = 0;
-      jumpTrack.scrollLeft = 0;
-    } else {
-      reveal(track, Math.min(focus ?? 0, Math.max(0, Math.max(text.length, offset + pattern.length) - 1)));
-      reveal(jumpTrack, lookup);
-    }
+    if (step.stepIndex === 0) track.scrollLeft = 0;
+    else reveal(track, Math.min(focus ?? 0, Math.max(0, Math.max(text.length, offset + pattern.length) - 1)));
   }
 
   return {

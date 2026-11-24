@@ -27,6 +27,18 @@ const indices = (page, name) => layer(page, name).locator('[data-avc-key^="idx-"
 const sequenceHeadings = page => page.locator('.f-sequence-row:visible h3').allTextContents();
 const display = value => String(value ?? '—');
 
+async function advanceWithPatternSlide(page, ruler) {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  assert.ok(await ruler.evaluate(control => {
+    const pattern = document.querySelector('.f-string-match-pattern');
+    pattern.getBoundingClientRect();
+    control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    return pattern.getAnimations().some(animation => animation.transitionProperty === 'transform');
+  }), 'pattern slides when the alignment changes');
+  await page.locator('.f-string-match-pattern').evaluate(node => Promise.allSettled(node.getAnimations().map(animation => animation.finished)));
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+}
+
 async function assertScrolledTo(cell) {
   const bounds = await cell.evaluate(rect => {
     const track = rect.closest('.f-sequence-track');
@@ -49,7 +61,8 @@ async function startStringMatch(page, algorithm, text, pattern) {
 
 async function assertAnimation(page, run, step) {
   const stage = page.locator('[data-viz-engine="plus-f"] .avc-svg');
-  if (step.algorithm === 'kmp') assert.ok(await page.locator('.f-kmp-animation').isVisible());
+  const stringMatch = step.algorithm === 'kmp' || step.algorithm === 'naive-string-match';
+  if (stringMatch) assert.ok(await page.locator('.f-string-match-animation').isVisible());
   else assert.ok(await stage.count(), step.algorithm);
   assert.doesNotMatch((await stage.allTextContents()).join(' '), /渲染失败|undefined|NaN/);
   const v = step.variables;
@@ -79,13 +92,10 @@ async function assertAnimation(page, run, step) {
       assert.equal(await layer(page, 'operands').locator('[data-avc-key="g-0"] rect').getAttribute('stroke'), '#0a6b4a');
     }
   }
-  if (step.algorithm === 'naive-string-match') {
-    assert.ok(await layer(page, 'match').count());
-    assert.deepEqual(await cells(page, 'matches'), v.matches.map(display));
-  }
+  if (stringMatch) assert.equal(await page.locator('.f-string-match-matches').getAttribute('data-positions'), v.matches.join(','));
+  if (step.algorithm === 'naive-string-match') assert.equal(await page.locator('.f-kmp-next').count(), 0);
   if (step.algorithm === 'kmp') {
     assert.deepEqual(await cells(page, 'kmp-next'), Array.from(run.input.pattern, (_, index) => display(v[v.mode][index])));
-    assert.equal(await page.locator('.f-kmp-matches').getAttribute('data-positions'), v.matches.join(','));
   }
   if (step.algorithm === 'expression-dag' && v.nodes.length) {
     const graph = layer(page, 'expression-dag');
@@ -200,9 +210,6 @@ try {
       assert.deepEqual(await cells(page, 'infix'), ['12', '+', '3', '*', '(', '4', '-', '2', ')']);
       assert.deepEqual(await indices(page, 'infix'), ['0', '2', '3', '4', '5', '6', '7', '8', '9']);
       assert.deepEqual(await cells(page, 'postfix'), result);
-    }
-    if (id === 'naive-string-match') {
-      assert.deepEqual(await cells(page, 'matches'), result.map(String));
     }
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
@@ -350,40 +357,46 @@ try {
   const longMatch = await startStringMatch(page, 'naive-string-match', longText, longPattern);
   assert.deepEqual(longMatch.result, Array.from({ length: 71 }, (_, index) => index + 2));
   await assertStep(page, longMatch, 0);
-  const alignment = layer(page, 'match');
-  const alignmentRows = await alignment.locator('[data-avc-key^="gv-"]').evaluateAll(elements => {
-    const strings = [[], []];
-    for (const element of elements) {
-      const row = Number(element.dataset.avcKey.slice(3).split(',')[0]) % 4;
-      if (row < 2 && element.textContent) strings[row].push(element.textContent);
-    }
-    return strings;
-  });
-  assert.deepEqual(alignmentRows, [['制表符', '🙂', ...Array(118).fill('a')], Array(48).fill('a')]);
+  const naiveMain = layer(page, 'naive-text');
+  const naivePattern = layer(page, 'naive-pattern');
+  const movingPattern = page.locator('.f-string-match-pattern');
+  const connector = page.locator('.f-string-match-connector');
+  assert.deepEqual(await cells(page, 'naive-text'), ['制表符', '🙂', ...Array(118).fill('a')]);
+  assert.deepEqual(await cells(page, 'naive-pattern'), Array(48).fill('a'));
   await ruler.press('ArrowRight');
   await ruler.press('ArrowRight');
   await assertStep(page, longMatch, 2);
   assert.equal(longMatch.steps[2].variables.equal, false);
-  assert.equal(await alignment.locator('[data-avc-key="g-0,0"] rect').getAttribute('stroke-width'), '2');
+  assert.equal(await naiveMain.locator('[data-avc-key="g-0"] rect').getAttribute('stroke-width'), '2');
+  assert.ok(await connector.isVisible());
+  await advanceWithPatternSlide(page, ruler);
+  await assertStep(page, longMatch, 3);
+  assert.equal(await movingPattern.getAttribute('data-offset'), '1');
+  assert.ok(await connector.isHidden());
+  await ruler.press('ArrowRight');
+  await assertStep(page, longMatch, 4);
+  const mainAfterSlide = await naiveMain.locator('[data-avc-key="g-1"] rect').boundingBox();
+  const patternAfterSlide = await naivePattern.locator('[data-avc-key="g-0"] rect').boundingBox();
+  assert.ok(Math.abs(mainAfterSlide.x - patternAfterSlide.x) <= 1);
+  assert.ok(await connector.isVisible());
+  await ruler.press('ArrowLeft');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, longMatch, 2);
+  assert.equal(await movingPattern.getAttribute('data-offset'), '0');
   await ruler.press('End');
   await assertStep(page, longMatch, longMatch.steps.length - 1);
-  assert.match(await layer(page, 'matches').getAttribute('aria-label'), /71 处/);
   await ruler.press('ArrowLeft');
   await assertStep(page, longMatch, longMatch.steps.length - 2);
-  assert.equal(await layer(page, 'matches').locator('[data-avc-key="g-70"] rect').getAttribute('stroke-width'), '2');
+  assert.equal(await movingPattern.getAttribute('data-offset'), '72');
   await ruler.press('ArrowLeft');
   await assertStep(page, longMatch, longMatch.steps.length - 3);
-  assert.equal(await layer(page, 'matches').locator('[data-avc-key="gv-70"]').count(), 0);
-  assert.equal(await alignment.locator('[data-avc-key="gv-75,5"]').textContent(), '119');
-  assert.equal(await alignment.locator('[data-avc-key="gv-78,5"]').textContent(), '47');
-  for (const row of [76, 77]) {
-    const cell = alignment.locator('[data-avc-key="g-' + row + ',5"] rect');
+  for (const cell of [naiveMain.locator('[data-avc-key="g-119"] rect'), naivePattern.locator('[data-avc-key="g-47"] rect')]) {
     assert.equal(await cell.getAttribute('stroke-width'), '2');
     assert.ok(await cell.evaluate(rect => {
-      const viewport = rect.closest('.avc-svg-wrap');
+      const viewport = rect.closest('.f-string-match-track');
       const r = rect.getBoundingClientRect();
       const v = viewport.getBoundingClientRect();
-      return viewport.scrollTop > 0 && r.top >= v.top - 1 && r.bottom <= v.bottom + 1;
+      return viewport.scrollLeft > 0 && r.left >= v.left - 1 && r.right <= v.left + viewport.clientWidth + 1;
     }), 'both compared cells are visible');
   }
   for (const [pattern, result] of [['', [0]], ['aa', []]]) {
@@ -392,13 +405,11 @@ try {
     await ruler.press('End');
     await assertStep(page, run, run.steps.length - 1);
     assert.deepEqual(run.result, result);
-    assert.match(await layer(page, 'matches').getAttribute('aria-label'), new RegExp(result.length + ' 处'));
+    assert.ok(await connector.isHidden());
   }
 
   await selectWorkbenchAlgorithm(page, 'kmp');
   const preprocessing = layer(page, 'kmp-next');
-  const movingPattern = page.locator('.f-kmp-pattern');
-  const connector = page.locator('.f-kmp-connector');
   assert.deepEqual(await page.locator('#f-mode option').allTextContents(), ['改进前 · next', '改进后 · nextval']);
   for (const [mode, jump] of [['next', 1], ['nextval', -1]]) {
     if (mode === 'nextval') await page.click('#c-edit');
@@ -406,17 +417,8 @@ try {
     const run = await startStringMatch(page, 'kmp', 'aab', 'aaa');
     const fallback = run.steps.findIndex(step => step.event === 'fallback');
     for (let index = 0; index < fallback - 1; index++) await ruler.press('ArrowRight');
-    if (mode === 'next') {
-      await page.emulateMedia({ reducedMotion: 'no-preference' });
-      assert.ok(await ruler.evaluate(control => {
-        const pattern = document.querySelector('.f-kmp-pattern');
-        pattern.getBoundingClientRect();
-        control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-        return pattern.getAnimations().some(animation => animation.transitionProperty === 'transform');
-      }), 'pattern slides during fallback');
-      await movingPattern.evaluate(node => Promise.allSettled(node.getAnimations().map(animation => animation.finished)));
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-    } else await ruler.press('ArrowRight');
+    if (mode === 'next') await advanceWithPatternSlide(page, ruler);
+    else await ruler.press('ArrowRight');
     await assertStep(page, run, fallback);
     assert.deepEqual(run.result, []);
     assert.equal(run.steps[fallback].variables.jump, jump);
@@ -446,10 +448,10 @@ try {
   assert.match(await preprocessing.locator('[data-avc-key="g-47"] title').textContent(), /前缀长度 47/);
   await ruler.press('ArrowLeft');
   await assertStep(page, longKmp, longKmp.steps.length - 2);
-  assert.ok(await preprocessing.evaluate(svg => svg.closest('.f-kmp-track').scrollLeft > 0));
+  assert.ok(await preprocessing.evaluate(svg => svg.closest('.f-string-match-track').scrollLeft > 0));
   await ruler.press('ArrowLeft');
   await assertStep(page, longKmp, longKmp.steps.length - 3);
-  assert.equal(await page.locator('.f-kmp-matches').getAttribute('data-positions'), longKmp.result.slice(0, -1).join(','));
+  assert.equal(await page.locator('.f-string-match-matches').getAttribute('data-positions'), longKmp.result.slice(0, -1).join(','));
   await page.click('#c-edit');
   const emptyKmp = await startStringMatch(page, 'kmp', 'a', '');
   await ruler.press('End');

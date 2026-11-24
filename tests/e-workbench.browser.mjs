@@ -18,7 +18,7 @@ const examples = [
   ['singly-linked-list-delete', [2, 3]],
   ['singly-linked-list-reverse', [6, 4, 2]],
   ['kth-from-end', { nodeId: 2, value: 1 }],
-  ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }, '转置输出'],
+  ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }],
   ['radix-sort', [3, 10, 21, 21], '排序结果'],
   ['counting-sort', [-1, 0, 2, 2], '输出数组'],
 ];
@@ -105,7 +105,9 @@ try {
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
-    if (!title) {
+    if (algorithm === 'sparse-matrix-transpose') {
+      assert.equal(await page.locator('.e-state-tables').count(), 0);
+    } else if (!title) {
       const id = algorithm.startsWith('array-list-') ? 'e-array' : 'e-list';
       await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
@@ -165,6 +167,24 @@ try {
       assert.equal(await svg.locator('[data-avc-key="ptr-prev"]').textContent(), '前驱 prev');
       assert.equal(await svg.locator('[data-avc-key="link-n1-n0"]').count(), 1);
       assert.equal(await svg.locator('[data-avc-key="link-n0-n1"]').count(), 0);
+    }
+    if (algorithm === 'sparse-matrix-transpose') {
+      const allocation = layer(page, 'e-column-allocation');
+      await page.click('#nextBtn');
+      await assertStep(page, run, 2);
+      assert.equal(await allocation.locator('[data-avc-key="gv-2"]').textContent(), '1 / —');
+      assert.equal(await allocation.locator('[data-avc-key="g-2"] rect').getAttribute('stroke-width'), '2');
+      const firstWrite = run.steps.find(step => step.event === 'write_out');
+      for (let index = 3; index <= firstWrite.stepIndex; index++) await page.click('#nextBtn');
+      await assertStep(page, run, firstWrite.stepIndex);
+      assert.deepEqual(await cells(page, 'e-column-allocation'), ['1 / 0', '0 / 1', '1 / 2', '1 / 2']);
+      for (const [id, row] of [['e-triples', firstWrite.variables.k], ['e-transpose', firstWrite.variables.pos]]) {
+        assert.equal(await layer(page, id).locator('[data-avc-key="g-' + row + ',0"] rect').getAttribute('stroke-width'), '2');
+      }
+      await page.click('#prevBtn');
+      await assertStep(page, run, firstWrite.stepIndex - 1);
+      assert.equal(await allocation.locator('[data-avc-key="gv-2"]').textContent(), '1 / 1');
+      assert.equal(await layer(page, 'e-transpose').count(), 0);
     }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
@@ -313,15 +333,29 @@ try {
   }
 
   await selectWorkbenchAlgorithm(page, 'sparse-matrix-transpose');
-  await page.fill('#e-rows', '1');
+  const triples = Array.from({ length: 64 }, (_, j) => ({ i: 63 - j, j, e: j + 0.12345678901234567 }));
+  await page.fill('#e-rows', '64');
   await page.fill('#e-cols', '64');
-  await page.fill('#e-data', '0,63,1.5');
+  await page.fill('#e-data', triples.map(({ i, j, e }) => [i, j, e].join(',')).join('\n'));
   const matrix = await start(page, 'sparse-matrix-transpose');
-  assert.deepEqual(matrix.result, { rows: 64, cols: 1, triples: [{ i: 63, j: 0, e: 1.5 }] });
+  assert.deepEqual(matrix.result, { rows: 64, cols: 64, triples: triples.map(({ i, j, e }) => ({ i: j, j: i, e })) });
+  await assertStep(page, matrix, 0);
   await page.locator('[data-t="last"]').click();
-  assert.deepEqual(await values(tableRows(page, '转置输出'), 1), ['63']);
+  await assertStep(page, matrix, matrix.steps.length - 1);
+  assert.equal(await page.locator('.e-state-tables').count(), 0);
+  assert.deepEqual(await cells(page, 'e-column-allocation'), triples.map(({ j }) => '1 / ' + (j + 1)));
+  assert.equal(await layer(page, 'e-column-allocation').locator('[data-avc-key="idx-63"]').textContent(), '原列 63');
   const matrixStep = await page.request.get(base + '/api/runs/' + matrix.runId + '/steps/' + (matrix.steps.length - 1));
   assert.deepEqual((await matrixStep.json()).step, matrix.steps.at(-1));
+  await page.click('#e-edit');
+  await page.fill('#e-rows', '0');
+  await page.fill('#e-cols', '0');
+  await page.fill('#e-data', '');
+  const emptyMatrix = await start(page, 'sparse-matrix-transpose');
+  await page.locator('[data-t="last"]').click();
+  await assertStep(page, emptyMatrix, emptyMatrix.steps.length - 1);
+  assert.deepEqual(emptyMatrix.result, { rows: 0, cols: 0, triples: [] });
+  assert.equal(await layer(page, 'e-column-allocation').count(), 0);
 
   await selectWorkbenchAlgorithm(page, 'array-list-reverse');
   await page.setViewportSize({ width: 1120, height: 800 });

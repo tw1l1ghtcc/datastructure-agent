@@ -13,23 +13,6 @@ function indexedTable(title, values, indices = []) {
   return highlight(table(title, ['下标', '值'], values.map((value, index) => [index, value])), indices);
 }
 
-function tripleTable(title, triples, index) {
-  return highlight(table(title, ['下标', '行', '列', '值'],
-    triples.map(({ i, j, e }, offset) => [offset, i, j, e])), [index]);
-}
-
-function matrixTables(step, columnCounts) {
-  const v = step.variables;
-  const matrices = [tripleTable('原矩阵三元组 · ' + v.rows + ' × ' + v.cols, v.triples, v.k)];
-  const num = v.num ?? (columnCounts?.stepIndex <= step.stepIndex ? columnCounts.variables.num : null);
-  if (num) {
-    matrices.push(highlight(table('按原列分配输出位置', ['原列', '三元组数量', '下一输出下标'],
-      num.map((count, col) => [col, count, v.cpos?.[col] ?? '—'])), [v.col]));
-  }
-  if (v.out) matrices.push(tripleTable('转置输出 · ' + v.cols + ' × ' + v.rows, v.out, v.pos));
-  return matrices;
-}
-
 function radixTables(step) {
   const { cnt, exp, tmp } = step.variables;
   const views = [indexedTable(step.done ? '排序结果' : '当前数组', step.array)];
@@ -64,9 +47,7 @@ export function createEStateTable(run, config) {
   const element = document.createElement('div');
   element.className = 'e-state-tables';
   const countInit = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
-  const columnCounts = config.view === 'matrix' ? run.steps.find(step => step.event === 'start_positions') : null;
   const renderers = {
-    matrix: step => matrixTables(step, columnCounts),
     radix: radixTables,
     counting: step => countingTables(run, step, countInit),
   };

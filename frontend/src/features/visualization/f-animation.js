@@ -3,6 +3,8 @@ import { createFStateTable } from './f-state-table.js';
 import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer, windowStart } from './trace-animation.js';
 
 const WINDOW_SIZE = 10;
+const MATCH_COLUMNS = 6;
+const MATCH_ROWS = 4;
 const charLabels = { ' ': '空格', '\t': '制表符', '\n': '换行', '\r': '回车' };
 const showChar = char => charLabels[char] ?? char;
 const nodeId = index => 'f' + index;
@@ -27,7 +29,7 @@ function bracketFrame(chars, step) {
   ];
 }
 
-function revealIndexedCell(host, layer, index) {
+function revealCell(host, layer, key) {
   const svg = host.querySelector('[data-avc-svg="' + layer + '"]');
   const viewport = svg?.parentElement;
   if (!viewport) return;
@@ -40,7 +42,7 @@ function revealIndexedCell(host, layer, index) {
     viewport.removeAttribute('role');
     viewport.removeAttribute('aria-label');
   }
-  const cell = svg.querySelector('[data-avc-key="g-' + index + '"] rect');
+  const cell = svg.querySelector('[data-avc-key="g-' + key + '"] rect');
   if (!cell) return;
   const bounds = cell.getBoundingClientRect();
   const view = viewport.getBoundingClientRect();
@@ -97,7 +99,52 @@ function expressionFrame(step, previous) {
   return layers;
 }
 
-function matchFrame(text, pattern, step) {
+const matchCell = (index, row) => (Math.floor(index / MATCH_COLUMNS) * MATCH_ROWS + row - 1) + ',' + (index % MATCH_COLUMNS);
+
+function naiveAlignment(step, patternLength) {
+  const { i, start, matches } = step.variables;
+  const matched = patternLength > 0 && (step.event === 'match' || (step.done && matches.length > 0));
+  const offset = start ?? (matched ? matches.at(-1) : 0);
+  return { offset, matched, focus: i ?? (matched ? offset + patternLength - 1 : offset) };
+}
+
+function naiveMatchFrame(text, pattern, step) {
+  const { matches, i, equal } = step.variables;
+  const { offset, matched } = naiveAlignment(step, pattern.length);
+  const length = Math.max(text.length, offset + pattern.length);
+  const values = [];
+  const rowLabels = [];
+  for (let first = 0; first < length; first += MATCH_COLUMNS) {
+    const indices = Array.from({ length: MATCH_COLUMNS }, (_, col) => first + col);
+    if (first > 0) {
+      values.push(indices.map(index => index < length ? index : ''));
+      rowLabels.push('下标');
+    }
+    values.push(
+      indices.map(index => text[index] ?? ''),
+      indices.map(index => pattern[index - offset] ?? ''),
+      indices.map(index => index >= offset && index < offset + pattern.length ? index - offset : ''),
+    );
+    rowLabels.push('主串', '模式串', '下标');
+  }
+  const compared = Number.isInteger(i) ? [matchCell(i, 1), matchCell(i, 2)] : [];
+  const aligned = gridLayer({
+    id: 'f-match', title: '主串与模式串 · 对齐起点 ' + offset, values, rowLabels,
+    colLabels: Array.from({ length: MATCH_COLUMNS }, (_, col) => col < length ? String(col) : ''),
+    roles: {
+      [equal ? 'focus1' : 'swap']: compared,
+      done: matched ? pattern.flatMap((_, index) => [matchCell(offset + index, 1), matchCell(offset + index, 2)]) : [],
+    },
+    props: { canvasWidth: 320, canvasHeight: Math.max(150, 72 + (values.length + 1) * 24), cellW: 36, cellH: 24 },
+  });
+  const title = '匹配起点（' + matches.length + ' 处）';
+  const found = matches.length ? indexedCard('f-matches', title, matches, {
+    added: step.event === 'match' || step.event === 'empty' ? [matches.length - 1] : [],
+  }) : sequenceLayer('f-matches', title, []);
+  return [aligned, found];
+}
+
+function kmpFrame(text, pattern, step) {
   const v = step.variables;
   const comparing = Number.isInteger(v.i) && Number.isInteger(v.j);
   const matched = step.event === 'match' || (step.done && v.matches.length > 0);
@@ -249,8 +296,8 @@ export function createFAnimation(host, explainHost, run, config) {
     'bracket-matching': step => bracketFrame(text, step),
     'infix-to-postfix': expression,
     'expression-evaluation': expression,
-    'naive-string-match': step => matchFrame(text, pattern, step),
-    kmp: step => matchFrame(text, pattern, step),
+    'naive-string-match': step => naiveMatchFrame(text, pattern, step),
+    kmp: step => kmpFrame(text, pattern, step),
     'expression-dag': step => expressionDagFrame(step.variables),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
   };
@@ -258,17 +305,23 @@ export function createFAnimation(host, explainHost, run, config) {
     const { operators, output, stack, mode } = step.variables;
     const active = stack ? evaluationTokenIndex(step) : -1;
     const position = step.event === 'postfix' ? 0 : output.length - 1;
-    if (stack) revealIndexedCell(host, 'f-operands', stack.length - 1);
-    if (mode !== 'postfix') revealIndexedCell(host, 'f-operators', operators.length - 1);
-    revealIndexedCell(host, 'f-postfix', active >= 0 ? active : position);
+    if (stack) revealCell(host, 'f-operands', stack.length - 1);
+    if (mode !== 'postfix') revealCell(host, 'f-operators', operators.length - 1);
+    revealCell(host, 'f-postfix', active >= 0 ? active : position);
   };
   const follow = {
     'bracket-matching': step => {
-      revealIndexedCell(host, 'f-text', step.variables.i ?? (step.done ? text.length - 1 : 0));
-      revealIndexedCell(host, 'f-brackets', step.variables.stack.length - 1);
+      revealCell(host, 'f-text', step.variables.i ?? (step.done ? text.length - 1 : 0));
+      revealCell(host, 'f-brackets', step.variables.stack.length - 1);
     },
     'infix-to-postfix': followExpression,
     'expression-evaluation': followExpression,
+    'naive-string-match': step => {
+      const { focus } = naiveAlignment(step, pattern.length);
+      revealCell(host, 'f-match', matchCell(focus, focus < MATCH_COLUMNS ? 1 : 0));
+      revealCell(host, 'f-match', matchCell(focus, 3));
+      revealCell(host, 'f-matches', step.variables.matches.length - 1);
+    },
   }[run.algorithm];
   const stateTable = follow ? null : createFStateTable(config, run.algorithm, input);
   const animation = createTraceAnimation(host, explainHost, stateTable, frames[run.algorithm], 'f', { run, config });

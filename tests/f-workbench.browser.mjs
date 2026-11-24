@@ -14,7 +14,7 @@ const cases = [
   { id: 'bracket-matching', result: true, field: 'matched' },
   { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'] },
   { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value' },
-  { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
+  { id: 'naive-string-match', result: [0,1,2] },
   { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
   { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/ },
   { id: 'critical-path', result: 5, field: 'duration', caption: /关键路径/ },
@@ -50,7 +50,9 @@ async function assertAnimation(page, run, step) {
   }
   if (step.algorithm === 'naive-string-match' || step.algorithm === 'kmp') {
     assert.ok(await layer(page, 'match').count());
-    assert.deepEqual(await cells(page, 'matches'), v.matches.slice(-10).map(display));
+    const complete = step.algorithm === 'naive-string-match';
+    if (complete) assert.equal(await page.locator('.c-state-tables').count(), 0);
+    assert.deepEqual(await cells(page, 'matches'), (complete ? v.matches : v.matches.slice(-10)).map(display));
     if (v.mode && Array.from(run.input.pattern).length <= 10) {
       assert.deepEqual(await cells(page, 'jump-table'), Array.from(run.input.pattern, (_, index) => display(v[v.mode][index])));
     }
@@ -121,6 +123,7 @@ try {
     if (caption) assert.match(await page.locator('.c-state-tables').innerText(), caption, id);
     else if (id === 'bracket-matching') assert.match(await layer(page, 'text').getAttribute('aria-label'), /匹配成功/);
     else if (id === 'expression-evaluation') assert.match(await layer(page, 'operands').getAttribute('aria-label'), /结果 -8/);
+    else if (id === 'naive-string-match') assert.match(await layer(page, 'matches').getAttribute('aria-label'), /3 处/);
     else assert.match(await layer(page, 'postfix').getAttribute('aria-label'), /转换完成/);
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
@@ -285,6 +288,65 @@ try {
   assert.equal(await postfix.locator('[data-avc-key="idx-4"]').textContent(), '1');
   assert.equal(await postfix.locator('[data-avc-key="g-4"] rect').getAttribute('stroke-width'), '2');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'evaluation cards fit the mobile workbench');
+
+  await selectWorkbenchAlgorithm(page, 'naive-string-match');
+  const startMatch = async (text, pattern) => {
+    await page.fill('#c-data', text);
+    await page.fill('#f-secondary', pattern);
+    const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/naive-string-match/runs'));
+    await page.click('#startBtn');
+    const response = await pending;
+    assert.equal(response.status(), 200);
+    return response.json();
+  };
+  const longMatch = await startMatch('\t🙂' + 'a'.repeat(118), 'a'.repeat(48));
+  assert.deepEqual(longMatch.result, Array.from({ length: 71 }, (_, index) => index + 2));
+  await assertStep(page, longMatch, 0);
+  const alignment = layer(page, 'match');
+  const rows = await alignment.locator('[data-avc-key^="gv-"]').evaluateAll(elements => {
+    const strings = [[], []];
+    for (const element of elements) {
+      const row = Number(element.dataset.avcKey.slice(3).split(',')[0]) % 4;
+      if (row < 2 && element.textContent) strings[row].push(element.textContent);
+    }
+    return strings;
+  });
+  assert.deepEqual(rows, [['制表符', '🙂', ...Array(118).fill('a')], Array(48).fill('a')]);
+  await ruler.press('ArrowRight');
+  await ruler.press('ArrowRight');
+  await assertStep(page, longMatch, 2);
+  assert.equal(longMatch.steps[2].variables.equal, false);
+  assert.equal(await alignment.locator('[data-avc-key="g-0,0"] rect').getAttribute('stroke-width'), '2');
+  await ruler.press('End');
+  await assertStep(page, longMatch, longMatch.steps.length - 1);
+  assert.match(await layer(page, 'matches').getAttribute('aria-label'), /71 处/);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, longMatch, longMatch.steps.length - 2);
+  assert.equal(await layer(page, 'matches').locator('[data-avc-key="g-70"] rect').getAttribute('stroke-width'), '2');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, longMatch, longMatch.steps.length - 3);
+  assert.equal(await layer(page, 'matches').locator('[data-avc-key="gv-70"]').count(), 0);
+  assert.equal(await alignment.locator('[data-avc-key="gv-75,5"]').textContent(), '119');
+  assert.equal(await alignment.locator('[data-avc-key="gv-78,5"]').textContent(), '47');
+  for (const row of [76, 77]) {
+    const cell = alignment.locator('[data-avc-key="g-' + row + ',5"] rect');
+    assert.equal(await cell.getAttribute('stroke-width'), '2');
+    assert.ok(await cell.evaluate(rect => {
+      const viewport = rect.closest('.avc-svg-wrap');
+      const r = rect.getBoundingClientRect();
+      const v = viewport.getBoundingClientRect();
+      return viewport.scrollTop > 0 && r.top >= v.top - 1 && r.bottom <= v.bottom + 1;
+    }), 'both compared cells are visible');
+  }
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'alignment fits the mobile workbench');
+  for (const [pattern, result] of [['', [0]], ['aa', []]]) {
+    await page.click('#c-edit');
+    const run = await startMatch('a', pattern);
+    await ruler.press('End');
+    await assertStep(page, run, run.steps.length - 1);
+    assert.deepEqual(run.result, result);
+    assert.match(await layer(page, 'matches').getAttribute('aria-label'), new RegExp(result.length + ' 处'));
+  }
 
   assert.deepEqual(errors, []);
 } finally {

@@ -30,9 +30,6 @@ export function createCStateTable(config) {
         if (v.leafKeys) views.push(table('叶链中的键',['按顺序排列'],[[v.leafKeys]]));
       }
       if (Array.isArray(v.runs)) views.push(table(config.field==='runs' ? '当前有序段' : '已完成段',['段号（从 0 开始）','元素'],v.runs.map((run,index)=>[index,run])));
-      if (config.field==='array') {
-        views.push(table('缓冲区',['区域','内容'],[['活动区',v.active],['冻结区',v.frozen],['当前输出段',v.currentRun]]));
-      }
       if (config.field==='runs') {
         views.push(table('本批归并',['字段','内容'],[['各段读取位置',v.positions],['本趟已生成段',v.producedRuns]]));
       }

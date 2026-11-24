@@ -546,7 +546,8 @@
 .c-animation { display: grid; gap: 10px; justify-items: start; }
 .c-animation-stage.plus-viz { min-height: 0; height: auto; overflow: visible; }
 .c-animation-stage .canvas-card header span { display: none; }
-.c-animation-stage :is([data-layer="c-candidates"], [data-layer="c-output"]) .avc-svg-wrap { max-height: 210px; overflow-y: auto; }
+.c-animation-stage :is([data-layer="c-candidates"], [data-layer="c-output"], [data-layer="c-active"],
+  [data-layer="c-frozen"], [data-layer="c-current-run"]) .avc-svg-wrap { max-height: 210px; overflow-y: auto; }
 .c-animation .c-state-tables { max-width: 580px; }
 .c-animation .c-state-tables :is(th, td) { padding: 5px 8px; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: no-preference) {

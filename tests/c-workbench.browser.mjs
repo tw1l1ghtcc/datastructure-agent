@@ -244,6 +244,67 @@ try {
   assert.equal(await lastWrite.count(), 0);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 
+  await selectWorkbenchAlgorithm(page, 'replacement-selection');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const firstRun = Array(64).fill(10);
+  const laterValues = Array.from({ length: 64 }, (_, index) => index % 2 ? -3 : -4);
+  laterValues[63] = Number.MIN_SAFE_INTEGER;
+  await page.fill('#c-data', [...firstRun, ...laterValues].join(','));
+  await page.fill('#c-param', '64');
+  const replacementPending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/replacement-selection/runs'));
+  await page.click('#startBtn');
+  const replacementResponse = await replacementPending;
+  assert.equal(replacementResponse.status(), 200);
+  const replacement = await replacementResponse.json();
+  await page.locator('#c-edit').waitFor();
+  const buffer = id => page.locator('[data-layer="' + id + '"] svg');
+  const completed = page.locator('.c-state-tables table').filter({ has: page.locator('caption', { hasText: /^已完成段$/ }) });
+  const assertReplacementStep = async index => {
+    const step = replacement.steps[index];
+    assert.equal(await timeline.getAttribute('aria-valuenow'), String(index + 1));
+    assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'), step.lineId);
+    for (const [id, entries] of [['c-active', step.variables.active], ['c-frozen', step.variables.frozen]]) {
+      assert.deepEqual(await buffer(id).locator('[data-avc-key^="gv-"]').allTextContents(), entries.map(entry => String(entry.value)));
+      assert.deepEqual(await buffer(id).locator('[data-avc-key^="idx-"]').allTextContents(), entries.map(entry => '#' + entry.index));
+    }
+    assert.deepEqual(await buffer('c-current-run').locator('[data-avc-key^="gv-"]').allTextContents(), step.variables.currentRun.map(String));
+    assert.deepEqual(await completed.locator('tbody td:nth-child(2)').allTextContents(),
+      step.variables.runs.map(run => run.join('、')));
+    assert.equal(await page.locator('.c-state-tables caption', { hasText: /^缓冲区$/ }).count(), 0);
+  };
+  await timeline.press('ArrowRight');
+  await assertReplacementStep(1);
+  assert.equal(replacement.steps[1].variables.active.length, 64);
+  await timeline.press('End');
+  await assertReplacementStep(replacement.steps.length - 1);
+  assert.deepEqual(replacement.result, [firstRun, [...laterValues].sort((a, b) => a - b)]);
+  assert.equal(await buffer('c-current-run').count(), 0);
+  const lastFreeze = replacement.steps.findLastIndex(step => step.event === 'freeze');
+  for (let index = replacement.steps.length - 1; index > lastFreeze; index--) await timeline.press('ArrowLeft');
+  await assertReplacementStep(lastFreeze);
+  assert.equal(replacement.steps[lastFreeze].variables.frozen.length, 64);
+  const frozenLast = buffer('c-frozen').locator('[data-avc-key="g-63"] rect');
+  assert.equal(await frozenLast.getAttribute('stroke-width'), '2');
+  assert.ok(await frozenLast.evaluate(rect => {
+    const container = rect.closest('.avc-svg-wrap');
+    const view = container.getBoundingClientRect();
+    const cell = rect.getBoundingClientRect();
+    return container.scrollTop > 0 && cell.top >= view.top - 1 && cell.bottom <= view.bottom + 1;
+  }), 'the newly frozen element is in view');
+  await timeline.press('ArrowRight');
+  await assertReplacementStep(lastFreeze + 1);
+  assert.equal(await completed.locator('tbody tr').count(), 1);
+  await timeline.press('ArrowRight');
+  await assertReplacementStep(lastFreeze + 2);
+  assert.equal(await buffer('c-active').locator('[data-avc-key="idx-0"]').textContent(), '#127');
+  await timeline.press('ArrowLeft');
+  await timeline.press('ArrowLeft');
+  await timeline.press('ArrowLeft');
+  await assertReplacementStep(lastFreeze - 1);
+  assert.equal(await frozenLast.count(), 0);
+  assert.equal(await buffer('c-current-run').locator('[data-avc-key="g-63"] rect').getAttribute('stroke-width'), '2');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
   await selectWorkbenchAlgorithm(page,'binary-search');
   await page.click('#fillDemo');
   await page.click('#startBtn');

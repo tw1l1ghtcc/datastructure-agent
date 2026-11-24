@@ -8,9 +8,9 @@ import { indexedCard } from './trace-animation.js';
 const ARRAY_WINDOW = 16;
 const MIN_WIDTH = 320;
 
-function sequence(id, title, values, { focus = [], tail = false, indexBase = 0 } = {}) {
+function sequence(id, title, values, { focus = [], indexBase = 0 } = {}) {
   const size = Math.min(values.length, ARRAY_WINDOW);
-  const anchor = focus[0] ?? (tail ? values.length - 1 : 0);
+  const anchor = focus[0] ?? 0;
   const first = Math.max(0, Math.min(anchor - Math.floor(size / 2), values.length - size));
   const base = first + indexBase;
   const slice = values.slice(first, first + size);
@@ -66,31 +66,38 @@ function optimalTree(step) {
   return { width: stage.width, layers: [candidates, stage.layer] };
 }
 
+function outputCard(id, title, values, writing) {
+  return values.length
+    ? indexedCard(id, title, values, { added: writing ? [values.length - 1] : [] })
+    : sequence(id, title, []);
+}
+
 function multiway(step) {
   const v = step.variables;
   const heads = (v.group ?? v.runs).map((run, i) => run[v.positions[i] ?? 0] ?? null);
   const groupStart = v.groupStart ?? 0;
   const selected = step.event === 'select' ? [v.selected.run - groupStart] : [];
-  const title = step.done ? '归并结果' : '本批输出';
-  const output = v.output.length
-    ? indexedCard('c-output', title, v.output, { added: step.event === 'output' ? [v.output.length - 1] : [] })
-    : sequence('c-output', title, []);
   return { layers: [
     sequence('c-run-heads', '各段下一待取值（按段号）', heads, { focus: selected, indexBase: groupStart }),
-    output,
+    outputCard('c-output', step.done ? '归并结果' : '本批输出', v.output, step.event === 'output'),
   ] };
 }
 
+function bufferCard(id, title, entries, incoming) {
+  if (!entries.length) return sequence(id, title, []);
+  const position = entries.findIndex(entry => entry.index === incoming?.index);
+  return indexedCard(id, title, entries.map(entry => entry.value),
+    { focus1: position < 0 ? [] : [position] }, entries.map(entry => '#' + entry.index));
+}
+
 function replacement(step) {
-  const { active, frozen, currentRun, incoming, runs } = step.variables;
-  const focus = entries => entries.flatMap((entry, index) => entry.index === incoming?.index ? [index] : []);
-  const output = step.done ? runs.at(-1) ?? [] : currentRun;
-  return { layers: [
-    sequence('c-active', '活动缓冲区', active.map(entry => entry.value), { focus: focus(active) }),
-    sequence('c-frozen', '冻结缓冲区', frozen.map(entry => entry.value), { focus: focus(frozen) }),
-    sequence('c-current-run', step.done && runs.length ? '最后完成的有序段' : '当前输出段', output,
-      { focus: step.event === 'output' ? [output.length - 1] : [], tail: true }),
-  ] };
+  const { active, frozen, currentRun, incoming } = step.variables;
+  const layers = [
+    bufferCard('c-active', '活动区（格下为原下标）', active, incoming),
+    bufferCard('c-frozen', '冻结区（格下为原下标）', frozen, incoming),
+  ];
+  if (!step.done) layers.push(outputCard('c-current-run', '当前输出段', currentRun, step.event === 'output'));
+  return { layers };
 }
 
 function searchTree(step) {
@@ -140,14 +147,20 @@ export function createCAnimation(host, run, config, explainHost) {
     canvas.style.width = minWidth + 'px';
     stage.render(frame.layers);
     for (const [index, svg] of [...canvas.querySelectorAll('.avc-svg')].entries()) {
-      const { title } = frame.layers[index];
+      const { id, title, roles } = frame.layers[index];
       svg.setAttribute('role', 'img');
       svg.setAttribute('aria-label', title);
-      const followOutput = svg.dataset.avcSvg === 'c-output';
-      if (followOutput || svg.dataset.avcSvg === 'c-candidates') {
+      const followOutput = id === 'c-output' || id === 'c-current-run';
+      if (followOutput || id === 'c-candidates' || id === 'c-active' || id === 'c-frozen') {
         const viewport = svg.parentElement;
         viewport.scrollTop = followOutput ? viewport.scrollHeight : 0;
         if (viewport.scrollHeight > viewport.clientHeight) {
+          const focus = roles.focus1?.[0];
+          const cell = focus == null ? null : svg.querySelector('[data-avc-key="g-' + focus + '"] rect');
+          if (cell) {
+            const bottom = cell.getBoundingClientRect().bottom;
+            viewport.scrollTop += Math.max(0, bottom - viewport.getBoundingClientRect().bottom + 4);
+          }
           viewport.tabIndex = 0;
           viewport.setAttribute('role', 'region');
           viewport.setAttribute('aria-label', title);

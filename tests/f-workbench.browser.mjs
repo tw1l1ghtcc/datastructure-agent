@@ -415,16 +415,21 @@ try {
     assert.equal(await page.locator('#algorithm-trigger').getAttribute('data-algorithm'), choice);
     assert.ok(await page.locator('#f-mode').isHidden());
     assert.equal(new URL(page.url()).hash, '#workbench?algorithm=' + choice);
+    if (mode === 'next') {
+      const direct = await startStringMatch(page, 'kmp', 'abababaca', 'ababaca');
+      const expected = ['-1', '0', '0', '1', '2', '3', '0'];
+      for (const [index] of expected.entries()) {
+        await ruler.press('ArrowRight');
+        await assertStep(page, direct, index + 1);
+        assert.deepEqual(await cells(page, 'kmp-next'), expected.map((value, column) => column <= index ? value : '—'));
+      }
+      await ruler.press('ArrowRight');
+      await assertStep(page, direct, expected.length + 1);
+      assert.equal(direct.steps[expected.length + 1].event, 'compare');
+      await page.click('#c-edit');
+    }
     const run = await startStringMatch(page, 'kmp', 'aab', 'aaa');
     assert.equal(run.input.mode, mode);
-    if (mode === 'next') {
-      for (const [index, expected] of [['-1', '—', '—'], ['-1', '0', '—'], ['-1', '0', '1']].entries()) {
-        await ruler.press('ArrowRight');
-        await assertStep(page, run, index + 1);
-        assert.deepEqual(await cells(page, 'kmp-next'), expected);
-      }
-      await ruler.press('Home');
-    }
     const fallback = run.steps.findIndex(step => step.event === 'fallback');
     for (let index = 0; index < fallback - 1; index++) await ruler.press('ArrowRight');
     if (mode === 'next') await advanceWithPatternSlide(page, ruler);

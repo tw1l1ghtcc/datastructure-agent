@@ -35,12 +35,11 @@ int kmp(const unsigned long text[], int n, const unsigned long pattern[], int m,
   int prefix[48] = {0}, next[48]; // @init
   if (m == 0) { matches[0] = 0; return 1; } // @empty
   next[0] = -1; // @table-init
-  for (int k = 1, p = 0; k < m; ++k) {
-    int fallback = p;
-    while (p > 0 && pattern[k] != pattern[p]) p = prefix[p - 1]; // @prefix-fallback
-    if (pattern[k] == pattern[p]) ++p;
-    prefix[k] = p;
-    next[k] = fallback; // @table-next
+  for (int k = 0, p = -1; k < m;) {
+    while (p >= 0 && pattern[k] != pattern[p]) p = next[p];
+    ++k; ++p;
+    prefix[k - 1] = p;
+    if (k < m) next[k] = p; // @table-next
   }
   int i = 0, j = 0, count = 0;
   while (i < n) {
@@ -55,8 +54,48 @@ int kmp(const unsigned long text[], int n, const unsigned long pattern[], int m,
   return count; // @done
 }
 `),
-  sourceVersion: 'kmp-next-c-v1',
+  sourceVersion: 'kmp-next-c-v2',
 };
+
+const initialJump = '模式串第 0 位失配时，用 -1 表示直接推进主串。';
+
+function buildNext(pattern, prefix, next, trace) {
+  next.push(-1);
+  trace.record('table-init', initialJump, { k: 0 });
+  for (let k = 0, p = -1; k < pattern.length;) {
+    while (p >= 0 && pattern[k] !== pattern[p]) p = next[p];
+    k += 1;
+    p += 1;
+    prefix.push(p);
+    if (k < pattern.length) {
+      next.push(p);
+      trace.record('table-next', `前 ${k} 个字符的最长相等真前后缀长度为 ${p}，写入 next[${k}]。`, { k });
+    }
+  }
+}
+
+function buildNextval(pattern, prefix, next, nextval, trace) {
+  prefix.push(0);
+  for (let k = 1, p = 0; k < pattern.length; k += 1) {
+    while (p > 0 && pattern[k] !== pattern[p]) {
+      const previous = p;
+      p = prefix[p - 1];
+      trace.record('prefix-fallback', '构表时失配，试用更短的前缀。', { k, j: previous, jump: p });
+    }
+    if (pattern[k] === pattern[p]) p += 1;
+    prefix.push(p);
+    trace.record('prefix', '位置 ' + k + ' 的真前后缀长度为 ' + p + '。', { k, j: p });
+  }
+  next.push(-1);
+  nextval.push(-1);
+  trace.record('table-init', initialJump, { k: 0 });
+  for (let k = 1; k < pattern.length; k += 1) {
+    const fallback = prefix[k - 1];
+    next.push(fallback);
+    nextval.push(pattern[k] === pattern[fallback] ? nextval[fallback] : fallback);
+    trace.record('table', '计算位置 ' + k + ' 的 next 和 nextval。', { k });
+  }
+}
 
 export function generateKmpSteps(input) {
   const text = characters(input?.text, '主串');
@@ -69,39 +108,8 @@ export function generateKmpSteps(input) {
   trace.record('init', optimized ? '先计算模式串的最长相等真前后缀长度。' : '从左到右构建 next 数组。');
   if (!pattern.length) return trace.finish('empty', '空模式只匹配下标 0。', [0], { matches: [0] });
 
-  prefix.push(0);
-  const initialJump = '模式串第 0 位失配时，用 -1 表示直接推进主串。';
-  if (!optimized) {
-    next.push(-1);
-    trace.record('table-init', initialJump, { k: 0 });
-  }
-  for (let k = 1, p = 0; k < pattern.length; k += 1) {
-    const fallback = p;
-    while (p > 0 && pattern[k] !== pattern[p]) {
-      const previous = p;
-      p = prefix[p - 1];
-      trace.record('prefix-fallback', '构表时失配，试用更短的前缀。', { k, j: previous, jump: p });
-    }
-    if (pattern[k] === pattern[p]) p += 1;
-    prefix.push(p);
-    if (optimized) {
-      trace.record('prefix', '位置 ' + k + ' 的真前后缀长度为 ' + p + '。', { k, j: p });
-    } else {
-      next.push(fallback);
-      trace.record('table-next', `写入 next[${k}] = ${fallback}，并记下当前位置的真前后缀长度 ${p}。`, { k });
-    }
-  }
-  if (optimized) {
-    next.push(-1);
-    nextval.push(-1);
-    trace.record('table-init', initialJump, { k: 0 });
-    for (let k = 1; k < pattern.length; k += 1) {
-      const fallback = prefix[k - 1];
-      next.push(fallback);
-      nextval.push(pattern[k] === pattern[fallback] ? nextval[fallback] : fallback);
-      trace.record('table', '计算位置 ' + k + ' 的 next 和 nextval。', { k });
-    }
-  }
+  if (optimized) buildNextval(pattern, prefix, next, nextval, trace);
+  else buildNext(pattern, prefix, next, trace);
 
   const table = optimized ? nextval : next;
   let i = 0, j = 0;

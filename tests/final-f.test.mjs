@@ -87,11 +87,15 @@ test('F KMP 改进前逐项写入 next，改进后沿用原构表轨迹', () => 
   const plain = verify(kmp({ ...input, mode: 'next' }), 'kmp');
   const optimized = verify(kmp({ ...input, mode: 'nextval' }), 'kmp');
   const expected = [-1, 0, 0, 1, 2, 3, 0];
-  const writes = plain.steps.filter(step => ['table-init', 'table-next'].includes(step.event));
+  const firstComparison = plain.steps.findIndex(step => step.event === 'compare');
+  assert.equal(firstComparison, expected.length + 1);
+  const writes = plain.steps.slice(1, firstComparison);
+  assert.deepEqual(writes.map(step => step.event), ['table-init', ...Array(expected.length - 1).fill('table-next')]);
   assert.deepEqual(writes.map(step => step.variables.next), expected.map((_, index) => expected.slice(0, index + 1)));
-  assert.ok(plain.steps.every(step => step.variables.nextval.length === 0 && !['prefix', 'table'].includes(step.event)));
+  assert.ok(plain.steps.every(step => step.variables.nextval.length === 0));
   assert.ok(plain.sourceLines.every(line => !line.text.includes('nextval')));
   assert.ok(optimized.steps.some(step => step.event === 'prefix'));
+  assert.deepEqual(plain.steps.at(-1).variables.prefix, optimized.steps.at(-1).variables.prefix);
   assert.deepEqual(optimized.steps.at(-1).variables.next, expected);
   assert.deepEqual(plain.result, optimized.result);
 });

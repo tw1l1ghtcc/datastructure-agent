@@ -1,6 +1,7 @@
 import { gridLayer, linkLayer } from '../../../vendor/plus/vendor/engine/model.js';
+import { createMatrixAnimation } from './e-matrix-animation.js';
 import { createEStateTable } from './e-state-table.js';
-import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
+import { createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
 const fullCanvasLabels = new Map([
@@ -120,28 +121,6 @@ function listFrame(step, previous, fitViewport) {
   })];
 }
 
-function tripleLayer(id, title, triples, index) {
-  const size = 6;
-  const start = windowStart(triples.length, size, index);
-  const rows = triples.slice(start, start + size).map(item => [item?.i, item?.j, item?.e].map(value => compactLabel(value, 14)));
-  const cellW = Math.max(60, ...rows.flat().map(value => value.length * 7 + 12));
-  const range = triples.length > size ? ` · ${start}–${start + rows.length - 1}` : '';
-  return gridLayer({
-    id, title: title + range, values: rows, colLabels: ['行', '列', '值'], rowLabels: rows.map((_, i) => String(start + i)),
-    roles: { swap: Number.isInteger(index) ? [0, 1, 2].map(col => (index - start) + ',' + col) : [] },
-    props: { canvasWidth: Math.max(320, 72 + cellW * 4), canvasHeight: Math.max(146, 72 + (rows.length + 1) * 28), cellW, cellH: 28 },
-  });
-}
-
-function matrixFrame(step) {
-  const { rows, cols, triples, k, out, pos, col, num, cpos } = step.variables;
-  const layers = [tripleLayer('e-triples', `原矩阵三元组 · ${rows} × ${cols}`, triples, k)];
-  if (num) layers.push(sequenceLayer('e-column-counts', '各列非零项数', num, { swap: [col] }));
-  if (cpos) layers.push(sequenceLayer('e-write-positions', '各原列下一输出下标', cpos, { swap: [col] }));
-  if (out) layers.push(tripleLayer('e-transpose', `转置输出 · ${cols} × ${rows}`, out, pos));
-  return layers;
-}
-
 function radixFrame(step, previous) {
   const { cnt, exp, tmp } = step.variables;
   const old = previous?.variables;
@@ -174,13 +153,13 @@ function countingFrame(run, step, init) {
 }
 
 export function createEAnimation(host, explainHost, run, config) {
+  if (config.view === 'matrix') return createMatrixAnimation(host, explainHost, run, config);
   const fillViewport = fullCanvasLabels.has(run.algorithm);
   const init = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
   const previous = step => run.steps[step.stepIndex - 1];
   const frames = {
     array: run.algorithm === 'array-list-delete-range' ? deleteRangeFrame : reverseFrame,
     linked: step => listFrame(step, previous(step)),
-    matrix: matrixFrame,
     radix: step => radixFrame(step, previous(step)),
     counting: step => countingFrame(run, step, init),
   };

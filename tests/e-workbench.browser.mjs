@@ -18,7 +18,7 @@ const examples = [
   ['singly-linked-list-delete', [2, 3]],
   ['singly-linked-list-reverse', [6, 4, 2]],
   ['kth-from-end', { nodeId: 2, value: 1 }],
-  ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }, '转置输出'],
+  ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }],
   ['radix-sort', [3, 10, 21, 21], '排序结果'],
   ['counting-sort', [-1, 0, 2, 2], '输出数组'],
 ];
@@ -38,6 +38,17 @@ async function assertFullCanvas(page, id) {
   assert.equal(await page.locator('.e-state-tables, .trace-animation-stage .canvas-card').count(), 0);
 }
 
+async function assertMatrixLayout(page) {
+  const view = page.locator('.e-matrix-animation');
+  const panes = view.locator('.e-matrix-pane');
+  const [left, right, columns] = await Promise.all([0, 1, 2].map(index => panes.nth(index).boundingBox()));
+  const bounds = await view.boundingBox();
+  assert.ok(left.width > 0 && Math.abs(left.width - right.width) <= 1);
+  assert.ok(left.x + left.width < right.x && left.y === right.y);
+  assert.ok(columns.y > left.y + left.height && Math.abs(columns.width - bounds.width) <= 1);
+  assert.equal(await page.locator('.e-state-tables').count(), 0);
+}
+
 async function start(page, algorithm, status = 200) {
   const pending = page.waitForResponse(response => response.url().endsWith(runPath(algorithm)));
   await page.click('#startBtn');
@@ -55,7 +66,8 @@ async function assertStep(page, run, index) {
   { index, lineId: step.lineId });
   assert.equal(await page.locator('[data-explain-host] .bsviz-caption').textContent(), step.description);
   const visible = page.locator('[data-viz-engine="plus-e"] .avc-svg');
-  assert.ok(await visible.count(), step.algorithm);
+  assert.ok(await page.locator('[data-viz-engine="plus-e"]').isVisible(), step.algorithm);
+  if (step.algorithm !== 'sparse-matrix-transpose') assert.ok(await visible.count(), step.algorithm);
   assert.doesNotMatch((await visible.allTextContents()).join(' '), /渲染失败|undefined|NaN/);
   const v = step.variables;
   if (v.nodes) {
@@ -68,7 +80,8 @@ async function assertStep(page, run, index) {
     }
   } else if (v.triples) {
     assert.deepEqual(await cells(page, 'e-triples'), v.triples.flatMap(({ i, j, e }) => [i, j, e].map(display)));
-    if (v.out) assert.deepEqual(await cells(page, 'e-transpose'), v.out.flatMap(({ i, j, e }) => [i, j, e].map(display)));
+    const expected = v.out ? v.out.flatMap(({ i, j, e }) => [i, j, e].map(display)) : Array(v.triples.length * 3).fill('—');
+    assert.deepEqual(await cells(page, 'e-transpose'), expected);
   } else if (step.algorithm === 'array-list-delete-range' || step.array.length <= 10) {
     assert.deepEqual(await cells(page, 'e-array'), step.array.map(display));
     if (v.tmp || v.output) assert.deepEqual(await cells(page, 'e-output'), (v.tmp ?? v.output).map(display));
@@ -105,7 +118,13 @@ try {
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
-    if (!title) {
+    if (algorithm === 'sparse-matrix-transpose') {
+      await assertMatrixLayout(page);
+      await page.locator('[data-viz-full]').click();
+      await assertMatrixLayout(page);
+      await page.keyboard.press('Escape');
+      await assertMatrixLayout(page);
+    } else if (!title) {
       const id = algorithm.startsWith('array-list-') ? 'e-array' : 'e-list';
       await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
@@ -290,13 +309,39 @@ try {
   await selectWorkbenchAlgorithm(page, 'sparse-matrix-transpose');
   await page.fill('#e-rows', '1');
   await page.fill('#e-cols', '64');
-  await page.fill('#e-data', '0,63,1.5');
+  const matrixValues = Array.from({ length: 64 }, (_, col) => col + 0.5);
+  await page.fill('#e-data', matrixValues.map((value, col) => `0,${col},${value}`).join('\n'));
   const matrix = await start(page, 'sparse-matrix-transpose');
-  assert.deepEqual(matrix.result, { rows: 64, cols: 1, triples: [{ i: 63, j: 0, e: 1.5 }] });
+  assert.deepEqual(matrix.result, { rows: 64, cols: 1, triples: matrixValues.map((e, i) => ({ i, j: 0, e })) });
   await page.locator('[data-t="last"]').click();
-  assert.deepEqual(await values(tableRows(page, '转置输出'), 1), ['63']);
+  await assertStep(page, matrix, matrix.steps.length - 1);
   const matrixStep = await page.request.get(base + '/api/runs/' + matrix.runId + '/steps/' + (matrix.steps.length - 1));
   assert.deepEqual((await matrixStep.json()).step, matrix.steps.at(-1));
+  await page.click('#prevBtn');
+  await assertStep(page, matrix, matrix.steps.length - 2);
+  const columnGrid = layer(page, 'e-column-positions');
+  assert.equal(await columnGrid.locator('[data-avc-key="gv-0,63"]').textContent(), '1');
+  assert.equal(await columnGrid.locator('[data-avc-key="gv-1,63"]').textContent(), '64');
+  for (const id of ['e-triples', 'e-transpose']) {
+    const svg = layer(page, id);
+    assert.equal(await svg.locator('[data-avc-key="g-63,0"] rect').getAttribute('stroke-width'), '2');
+    assert.ok(await svg.evaluate(element => element.closest('.e-matrix-track').scrollTop > 0));
+  }
+  assert.ok(await columnGrid.evaluate(svg => svg.closest('.e-matrix-track').scrollLeft > 0));
+  await page.click('#resetBtn');
+  await assertStep(page, matrix, 0);
+  assert.equal(await columnGrid.count(), 0);
+  assert.equal(await layer(page, 'e-transpose').evaluate(svg => svg.closest('.e-matrix-track').scrollTop), 0);
+
+  await page.click('#e-edit');
+  await page.fill('#e-rows', '0');
+  await page.fill('#e-cols', '0');
+  await page.fill('#e-data', '');
+  const emptyMatrix = await start(page, 'sparse-matrix-transpose');
+  await page.locator('[data-t="last"]').click();
+  await assertStep(page, emptyMatrix, emptyMatrix.steps.length - 1);
+  assert.deepEqual(emptyMatrix.result, { rows: 0, cols: 0, triples: [] });
+  assert.equal(await page.getByText('没有三元组', { exact: true }).count(), 2);
 
   await selectWorkbenchAlgorithm(page, 'array-list-reverse');
   await page.setViewportSize({ width: 1120, height: 800 });

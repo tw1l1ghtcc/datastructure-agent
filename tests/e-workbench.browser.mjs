@@ -13,7 +13,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 
 const examples = [
   ['array-list-reverse', [5, 4, 3, 2, 1]],
-  ['array-list-delete-range', [1, 5], '逻辑长度 2'],
+  ['array-list-delete-range', [1, 5]],
   ['singly-linked-list-insert', [1, 2, 3]],
   ['singly-linked-list-delete', [2, 3]],
   ['singly-linked-list-reverse', [6, 4, 2]],
@@ -106,7 +106,7 @@ try {
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
     if (!title) {
-      const id = algorithm === 'array-list-reverse' ? 'e-array' : 'e-list';
+      const id = algorithm.startsWith('array-list-') ? 'e-array' : 'e-list';
       await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
       await assertFullCanvas(page, id);
@@ -118,6 +118,15 @@ try {
     if (algorithm === 'array-list-reverse') {
       const svg = layer(page, 'e-array');
       for (const [index, label] of [[0, 'i · 0'], [4, 'j · 4']]) {
+        assert.equal(await svg.locator(`[data-avc-key="idx-${index}"]`).textContent(), label);
+        assert.equal(await svg.locator(`[data-avc-key="g-${index}"] rect`).getAttribute('stroke-width'), '2');
+      }
+    }
+    if (algorithm === 'array-list-delete-range') {
+      await page.click('#nextBtn');
+      await assertStep(page, run, 2);
+      const svg = layer(page, 'e-array');
+      for (const [index, label] of [[4, '源 · 4'], [1, '目标 · 1']]) {
         assert.equal(await svg.locator(`[data-avc-key="idx-${index}"]`).textContent(), label);
         assert.equal(await svg.locator(`[data-avc-key="g-${index}"] rect`).getAttribute('stroke-width'), '2');
       }
@@ -159,6 +168,12 @@ try {
     }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
+    if (algorithm === 'array-list-delete-range') {
+      const svg = layer(page, 'e-array');
+      assert.equal(await svg.getAttribute('aria-label'), '顺序表 · 逻辑长度 2');
+      assert.equal(await svg.locator('[data-avc-key="g-1"] rect').getAttribute('fill'), '#ffffff');
+      assert.equal(await svg.locator('[data-avc-key="g-2"] rect').getAttribute('fill'), '#f7f8fc');
+    }
     if (algorithm === 'kth-from-end') {
       const svg = layer(page, 'e-list');
       assert.match(await svg.locator('[data-avc-key="name"]').textContent(), /找到结点 #2，值 1/);
@@ -183,6 +198,39 @@ try {
     await assertStep(page, run, 0);
   }
 
+  // A long move crosses the old ten-cell window. All storage remains available in the canvas.
+  await selectWorkbenchAlgorithm(page, 'array-list-delete-range');
+  const stored = Array.from({ length: 64 }, (_, index) => index);
+  await page.fill('#e-data', stored.join(','));
+  await page.fill('#e-left', '1');
+  await page.fill('#e-right', '61');
+  const longDelete = await start(page, 'array-list-delete-range');
+  await assertFullCanvas(page, 'e-array');
+  assert.deepEqual(await cells(page, 'e-array'), stored.map(String));
+  await page.click('#nextBtn');
+  await page.click('#nextBtn');
+  await assertStep(page, longDelete, 2);
+  const deleteSvg = layer(page, 'e-array');
+  assert.equal(await deleteSvg.locator('[data-avc-key="idx-62"]').textContent(), '源 · 62');
+  assert.equal(await deleteSvg.locator('[data-avc-key="idx-1"]').textContent(), '目标 · 1');
+  assert.deepEqual(await cells(page, 'e-array'), longDelete.steps[2].array.map(String));
+  await page.click('#prevBtn');
+  await assertStep(page, longDelete, 1);
+  assert.deepEqual(await cells(page, 'e-array'), stored.map(String));
+  assert.deepEqual(longDelete.result, [0, 62, 63]);
+  await page.click('#e-edit');
+  await page.fill('#e-left', '0');
+  await page.fill('#e-right', '63');
+  const deleteAll = await start(page, 'array-list-delete-range');
+  await page.click('[data-t="last"]');
+  await assertStep(page, deleteAll, deleteAll.steps.length - 1);
+  assert.deepEqual(deleteAll.result, []);
+  assert.equal(await deleteSvg.getAttribute('aria-label'), '顺序表 · 逻辑长度 0');
+  assert.equal(await deleteSvg.locator('rect[fill="#f7f8fc"]').count(), stored.length);
+
+  await selectWorkbenchAlgorithm(page, 'counting-sort');
+  await page.click('#fillDemo');
+  await start(page, 'counting-sort');
   const ruler = page.locator('[data-tl-ruler]');
   const counts = tableRows(page, '计数表');
   await ruler.press('End');

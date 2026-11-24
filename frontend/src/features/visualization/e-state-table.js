@@ -13,12 +13,6 @@ function indexedTable(title, values, indices = []) {
   return highlight(table(title, ['下标', '值'], values.map((value, index) => [index, value])), indices);
 }
 
-function arrayTable(step) {
-  const { length, src, dst } = step.variables;
-  const rows = step.array.map((value, index) => [index, value, index < length ? '有效' : '超出逻辑长度']);
-  return [highlight(table('顺序表 · 逻辑长度 ' + length, ['下标', '存储值', '逻辑状态'], rows), [src, dst])];
-}
-
 function tripleTable(title, triples, index) {
   return highlight(table(title, ['下标', '行', '列', '值'],
     triples.map(({ i, j, e }, offset) => [offset, i, j, e])), [index]);
@@ -72,7 +66,6 @@ export function createEStateTable(run, config) {
   const countInit = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
   const columnCounts = config.view === 'matrix' ? run.steps.find(step => step.event === 'start_positions') : null;
   const renderers = {
-    array: arrayTable,
     matrix: step => matrixTables(step, columnCounts),
     radix: radixTables,
     counting: step => countingTables(run, step, countInit),

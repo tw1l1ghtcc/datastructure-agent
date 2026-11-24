@@ -5,6 +5,7 @@ import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
 const fullCanvasLabels = new Map([
   ['array-list-reverse', ['顺序表', '顺序表动画，i 和 j 标记交换位置']],
+  ['array-list-delete-range', ['顺序表', '顺序表动画，源和目标标记搬移位置，浅色格超出逻辑长度']],
   ['singly-linked-list-insert', ['链表与新结点', '链表动画，显示新结点和 next 指向']],
   ['singly-linked-list-delete', ['链表与脱链结点', '链表动画，显示删除后改接的 next 和已脱链的结点']],
   ['singly-linked-list-reverse', ['链表与逆置指针', '链表动画，显示前驱、当前结点和原后继']],
@@ -15,33 +16,26 @@ export function fullECanvasLabels(algorithm) {
   return fullCanvasLabels.get(algorithm);
 }
 
-function reverseFrame(step) {
-  const { i, j } = step.variables;
-  const cellLabels = step.array.map((_, index) => index === i ? 'i · ' + index : index === j ? 'j · ' + index : index);
+function arrayFrame(step) {
+  const { i, j, src, dst, length } = step.variables;
+  const moving = step.algorithm === 'array-list-delete-range';
+  const from = moving ? src : i;
+  const to = moving ? dst : j;
+  const title = moving ? '顺序表 · 逻辑长度 ' + length : '顺序表';
+  const cellLabels = step.array.map((_, index) => {
+    if (index === from) return (moving ? '源' : 'i') + ' · ' + index;
+    if (index === to) return (moving ? '目标' : 'j') + ' · ' + index;
+    return index;
+  });
   return [gridLayer({
-    id: 'e-array', title: '顺序表', values: [step.array], cellLabels,
-    roles: { swap: Number.isInteger(i) ? [i] : [], focus2: Number.isInteger(j) ? [j] : [] },
+    id: 'e-array', title, values: [step.array], cellLabels,
+    roles: {
+      swap: Number.isInteger(from) ? [from] : [],
+      focus2: Number.isInteger(to) ? [to] : [],
+      excluded: moving ? Array.from(step.array.keys()).slice(length) : [],
+    },
     props: { indexedArray: true },
   })];
-}
-
-function arrayFrame(step) {
-  const { length, i, j, src, dst } = step.variables;
-  const values = step.array;
-  const from = src ?? i;
-  const to = dst ?? j;
-  const left = Math.min(from, to);
-  const right = Math.max(from, to);
-  const title = length == null ? '顺序表' : '顺序表 · 逻辑长度 ' + length;
-  const roles = { swap: [from], focus2: [to], excluded: length == null ? [] : values.map((_, n) => n).slice(length) };
-  if (Number.isInteger(from) && Number.isInteger(to) && right - left >= 10) {
-    return [
-      sequenceLayer('e-array', title, values, roles, { first: windowStart(values.length, 10, left) }),
-      sequenceLayer('e-array-second', title, values, roles, { first: windowStart(values.length, 10, right) }),
-    ];
-  }
-  const start = Number.isInteger(from) && Number.isInteger(to) ? windowStart(values.length, 10, Math.floor((left + right + 1) / 2)) : undefined;
-  return [sequenceLayer('e-array', title, values, roles, { first: start })];
 }
 
 const listId = id => id == null ? null : 'n' + id;
@@ -167,7 +161,7 @@ export function createEAnimation(host, explainHost, run, config) {
   const init = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
   const previous = step => run.steps[step.stepIndex - 1];
   const frames = {
-    array: fillViewport ? reverseFrame : arrayFrame,
+    array: arrayFrame,
     linked: step => listFrame(step, previous(step)),
     matrix: matrixFrame,
     radix: step => radixFrame(step, previous(step)),

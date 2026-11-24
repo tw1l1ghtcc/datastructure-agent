@@ -61,7 +61,6 @@ function graphTables(algorithm, input, v) {
 
 function outcome(algorithm, value) {
   if (value?.error) return value.error;
-  if (algorithm === 'bracket-matching') return value.matched ? '匹配成功' : '下标 ' + value.index + ' 的括号未匹配';
   if (algorithm === 'critical-path') return '工期 ' + value.duration + (value.morePaths ? '，表中展示前 8 条关键路径' : '');
   return value?.value ?? value;
 }
@@ -74,12 +73,7 @@ export function createFStateTable(config, algorithm, input) {
     showStep(step) {
       const v = step.variables;
       let views;
-      if (algorithm === 'bracket-matching') {
-        views = [
-          table('括号栈（底到顶）', ['原下标', '括号'], v.stack.map(({ i, char }) => [i, char])),
-          table('原字符串', ['下标', '字符'], characterRows(input.text), index => index === v.i),
-        ];
-      } else if (config.chapter === 4) {
+      if (config.chapter === 4) {
         views = matchTables(input, v, algorithm);
       } else {
         const stacks = v.operators ? [

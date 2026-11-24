@@ -11,7 +11,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   windowsHide: true,
 });
 const cases = [
-  { id: 'bracket-matching', result: true, field: 'matched', caption: /括号栈/ },
+  { id: 'bracket-matching', result: true, field: 'matched' },
   { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], caption: /后缀序列/ },
   { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/ },
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
@@ -30,7 +30,9 @@ async function assertAnimation(page, run, step) {
   assert.doesNotMatch((await stage.allTextContents()).join(' '), /渲染失败|undefined|NaN/);
   const v = step.variables;
   if (step.algorithm === 'bracket-matching') {
-    assert.deepEqual(await cells(page, 'brackets'), v.stack.slice(-10).map(item => item.char));
+    assert.equal(await page.locator('.c-state-tables').count(), 0);
+    assert.deepEqual(await cells(page, 'brackets'), v.stack.map(item => item.char));
+    assert.deepEqual(await layer(page, 'brackets').locator('[data-avc-key^="idx-"]').allTextContents(), v.stack.map(item => String(item.i)));
   }
   if (v.operators) {
     assert.deepEqual(await cells(page, 'operators'), v.operators.slice(-10).map(token => token.text));
@@ -109,7 +111,8 @@ try {
     await assertStep(page, run, 1);
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
-    assert.match(await page.locator('.c-state-tables').innerText(), caption, id);
+    if (caption) assert.match(await page.locator('.c-state-tables').innerText(), caption, id);
+    else assert.match(await layer(page, 'text').getAttribute('aria-label'), /匹配成功/);
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
     await assertStep(page, run, index);
@@ -126,7 +129,7 @@ try {
     assert.deepEqual(stepRefs[0].variables, run.steps[index].variables);
     await page.click('#resetBtn');
     await assertStep(page, run, 0);
-    console.log(id + ' · Plus 动画、状态表、源码、步骤查询、单步回退、重置和 Mock 问答通过');
+    console.log(id + ' · Plus 动画、源码、步骤查询、单步回退、重置和 Mock 问答通过');
   }
   await page.click('#c-edit');
   await page.fill('#c-data', 'A, B');
@@ -168,6 +171,36 @@ try {
     body.scrollLeft = body.scrollWidth;
     return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
   }), 'the graph scrolls within the workbench');
+
+  await selectWorkbenchAlgorithm(page, 'bracket-matching');
+  const bracketText = '🙂\t' + '('.repeat(117) + ']';
+  await page.fill('#c-data', bracketText);
+  const bracketResponse = page.waitForResponse(response => response.url().endsWith('/api/algorithms/bracket-matching/runs'));
+  await page.click('#startBtn');
+  const brackets = await (await bracketResponse).json();
+  assert.deepEqual(brackets.result, { matched: false, index: 119, reason: 'mismatch' });
+  await assertStep(page, brackets, 0);
+  assert.deepEqual(await cells(page, 'text'), ['🙂', '制表符', ...Array(117).fill('('), ']']);
+  await page.click('[data-t="last"]');
+  await assertStep(page, brackets, brackets.steps.length - 1);
+  assert.match(await layer(page, 'text').getAttribute('aria-label'), /下标 119 未匹配/);
+  for (const [name, index] of [['text', 119], ['brackets', 116]]) {
+    const cell = layer(page, name).locator('[data-avc-key="g-' + index + '"] rect');
+    assert.equal(await cell.getAttribute('stroke-width'), '2');
+    assert.ok(await cell.evaluate(rect => {
+      const viewport = rect.closest('.avc-svg-wrap');
+      const r = rect.getBoundingClientRect();
+      const v = viewport.getBoundingClientRect();
+      return viewport.scrollTop > 0 && r.top >= v.top - 1 && r.bottom <= v.bottom + 1;
+    }), 'the current ' + name + ' cell has been scrolled into view');
+  }
+  await page.click('#prevBtn');
+  await assertStep(page, brackets, brackets.steps.length - 2);
+  assert.equal(await layer(page, 'text').getAttribute('aria-label'), '原字符串');
+  await page.click('#resetBtn');
+  await assertStep(page, brackets, 0);
+  assert.equal(await layer(page, 'text').evaluate(svg => svg.parentElement.scrollTop), 0);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'bracket cards fit the mobile workbench');
 
   assert.deepEqual(errors, []);
 } finally {

@@ -1,5 +1,5 @@
 import { gridLayer, linkLayer } from '../../../vendor/plus/vendor/engine/model.js';
-import { createTraceAnimation, windowStart } from './trace-animation.js';
+import { createTraceAnimation, indexedCard, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
 const fullCanvasLabels = new Map([
@@ -109,13 +109,6 @@ function tripleLayer(id, title, triples, index) {
     id, title, values: rows, colLabels: ['行', '列', '值'],
     roles: { swap: Number.isInteger(index) ? [0, 1, 2].map(col => index + ',' + col) : [] },
     props: { canvasWidth: Math.max(320, 72 + cellW * 4), canvasHeight: Math.max(146, 72 + (rows.length + 1) * 28), cellW, cellH: 28 },
-  });
-}
-
-function indexedCard(id, title, values, roles = {}, cellLabels) {
-  return gridLayer({
-    id, title, values: [values], roles, cellLabels,
-    props: { indexedArray: true, canvasWidth: 320, canvasHeight: Math.max(130, Math.ceil(values.length / 4) * 44 + 24) },
   });
 }
 

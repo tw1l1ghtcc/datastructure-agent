@@ -1,6 +1,6 @@
 import { graphLayer, gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createFStateTable } from './f-state-table.js';
-import { compactLabel, createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
+import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer, windowStart } from './trace-animation.js';
 
 const WINDOW_SIZE = 10;
 const charLabels = { ' ': '空格', '\t': '制表符', '\n': '换行', '\r': '回车' };
@@ -14,11 +14,38 @@ function tail(id, title, values, markTop = false) {
 
 function bracketFrame(chars, step) {
   const { i, stack } = step.variables;
-  const role = step.done && !step.result.matched ? 'swap' : 'focus1';
+  const failed = step.result?.matched === false;
+  const role = failed ? 'swap' : 'focus1';
+  const title = failed ? '原字符串 · 下标 ' + step.result.index + ' 未匹配'
+    : step.done ? '原字符串 · 匹配成功' : '原字符串';
   return [
-    sequenceLayer('f-text', '字符序列', chars, { [role]: [i] }),
-    tail('f-brackets', '括号栈（栈顶在右）', stack.map(item => item.char), true),
+    chars.length ? indexedCard('f-text', title, chars, { [role]: Number.isInteger(i) ? [i] : [] })
+      : sequenceLayer('f-text', title, []),
+    stack.length ? indexedCard('f-brackets', '括号栈（底到顶，格下为原下标）', stack.map(item => item.char),
+      { focus2: [stack.length - 1] }, stack.map(item => item.i))
+      : sequenceLayer('f-brackets', '括号栈', []),
   ];
+}
+
+function revealBracketCell(host, layer, index) {
+  const svg = host.querySelector('[data-avc-svg="' + layer + '"]');
+  const viewport = svg?.parentElement;
+  if (!viewport) return;
+  if (viewport.scrollHeight > viewport.clientHeight) {
+    viewport.tabIndex = 0;
+    viewport.setAttribute('role', 'region');
+    viewport.setAttribute('aria-label', svg.getAttribute('aria-label'));
+  } else {
+    viewport.removeAttribute('tabindex');
+    viewport.removeAttribute('role');
+    viewport.removeAttribute('aria-label');
+  }
+  const cell = svg.querySelector('[data-avc-key="g-' + index + '"] rect');
+  if (!cell) return;
+  const bounds = cell.getBoundingClientRect();
+  const view = viewport.getBoundingClientRect();
+  if (bounds.top < view.top + 4) viewport.scrollTop += bounds.top - view.top - 4;
+  else if (bounds.bottom > view.bottom - 4) viewport.scrollTop += bounds.bottom - view.bottom + 4;
 }
 
 function expressionStacks(v) {
@@ -175,6 +202,7 @@ export function createFAnimation(host, explainHost, run, config) {
   const input = run.input;
   const text = Array.from(input.text ?? '', showChar);
   const pattern = Array.from(input.pattern ?? '', showChar);
+  const bracketMatching = run.algorithm === 'bracket-matching';
   const frames = {
     'bracket-matching': step => bracketFrame(text, step),
     'infix-to-postfix': step => expressionStacks(step.variables),
@@ -187,5 +215,23 @@ export function createFAnimation(host, explainHost, run, config) {
     'expression-dag': step => expressionDagFrame(step.variables),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
   };
-  return createTraceAnimation(host, explainHost, createFStateTable(config, run.algorithm, input), frames[run.algorithm], 'f', { run, config });
+  const stateTable = bracketMatching ? null : createFStateTable(config, run.algorithm, input);
+  const animation = createTraceAnimation(host, explainHost, stateTable, frames[run.algorithm], 'f', { run, config });
+  if (!bracketMatching) return animation;
+  const reveal = step => {
+    revealBracketCell(host, 'f-text', step.variables.i ?? (step.done ? text.length - 1 : 0));
+    revealBracketCell(host, 'f-brackets', step.variables.stack.length - 1);
+  };
+  return {
+    ...animation,
+    showStep(step) {
+      animation.showStep(step);
+      reveal(step);
+    },
+    playEnterAnimation() {
+      animation.playEnterAnimation();
+      const step = animation.getStep();
+      if (step) reveal(step);
+    },
+  };
 }

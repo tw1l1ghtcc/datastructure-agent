@@ -33,6 +33,13 @@ export function sequenceLayer(id, title, values, roles = {}, { first, indexBase 
   });
 }
 
+export function indexedCard(id, title, values, roles = {}, cellLabels) {
+  return gridLayer({
+    id, title, values: [values], roles, cellLabels,
+    props: { indexedArray: true, canvasWidth: 320, canvasHeight: Math.max(130, Math.ceil(values.length / 4) * 44 + 24) },
+  });
+}
+
 export function createTraceAnimation(host, explainHost, stateTable, frameFor, packageId, { run, config, fillViewport = false }) {
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-' + packageId;

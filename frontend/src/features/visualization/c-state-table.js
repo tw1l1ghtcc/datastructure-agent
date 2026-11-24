@@ -34,7 +34,7 @@ export function createCStateTable(config) {
         views.push(table('缓冲区',['区域','内容'],[['活动区',v.active],['冻结区',v.frozen],['当前输出段',v.currentRun]]));
       }
       if (config.field==='runs') {
-        views.push(table('本批归并',['字段','内容'],[['各段读取位置',v.positions],['本批输出',v.output],['本趟已生成段',v.producedRuns]]));
+        views.push(table('本批归并',['字段','内容'],[['各段读取位置',v.positions],['本趟已生成段',v.producedRuns]]));
       }
       if (step.done && config.tree) {
         views.push(table('查询结果',['查询键','结果','节点 ID','节点内位置','访问路径'],

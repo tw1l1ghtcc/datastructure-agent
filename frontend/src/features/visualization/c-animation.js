@@ -71,10 +71,13 @@ function multiway(step) {
   const heads = (v.group ?? v.runs).map((run, i) => run[v.positions[i] ?? 0] ?? null);
   const groupStart = v.groupStart ?? 0;
   const selected = step.event === 'select' ? [v.selected.run - groupStart] : [];
-  const focus = step.event === 'output' ? [v.output.length - 1] : [];
+  const title = step.done ? '归并结果' : '本批输出';
+  const output = v.output.length
+    ? indexedCard('c-output', title, v.output, { added: step.event === 'output' ? [v.output.length - 1] : [] })
+    : sequence('c-output', title, []);
   return { layers: [
     sequence('c-run-heads', '各段下一待取值（按段号）', heads, { focus: selected, indexBase: groupStart }),
-    sequence('c-output', step.done ? '归并结果' : '本批输出', v.output, { focus, tail: true }),
+    output,
   ] };
 }
 
@@ -137,15 +140,17 @@ export function createCAnimation(host, run, config, explainHost) {
     canvas.style.width = minWidth + 'px';
     stage.render(frame.layers);
     for (const [index, svg] of [...canvas.querySelectorAll('.avc-svg')].entries()) {
+      const { title } = frame.layers[index];
       svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', frame.layers[index].title);
-      if (svg.dataset.avcSvg === 'c-candidates') {
+      svg.setAttribute('aria-label', title);
+      const followOutput = svg.dataset.avcSvg === 'c-output';
+      if (followOutput || svg.dataset.avcSvg === 'c-candidates') {
         const viewport = svg.parentElement;
-        viewport.scrollTop = 0;
+        viewport.scrollTop = followOutput ? viewport.scrollHeight : 0;
         if (viewport.scrollHeight > viewport.clientHeight) {
           viewport.tabIndex = 0;
           viewport.setAttribute('role', 'region');
-          viewport.setAttribute('aria-label', frame.layers[index].title);
+          viewport.setAttribute('aria-label', title);
         } else {
           viewport.removeAttribute('tabindex');
           viewport.removeAttribute('role');

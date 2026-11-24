@@ -84,16 +84,16 @@
 .vizwin[data-trace-split] .viewport-legend { margin: 4px 14px 10px; }
 .vizwin .legend-related { background: #fdeff8; color: #8b1570; }
 .trace-animation-stage .canvas-card header span { display: none; }
-.vizwin[data-trace-animation] .viewport-scene:has([data-layer="e-triples"], [data-layer="e-buckets"], [data-layer="e-counts"], [data-layer="f-text"]) { width: 100%; }
-.trace-animation-stage.plus-viz:has([data-layer="e-triples"], [data-layer="e-buckets"], [data-layer="e-counts"], [data-layer="f-text"]) {
+.vizwin[data-trace-animation] .viewport-scene:has([data-layer="e-triples"], [data-layer="e-buckets"], [data-layer="e-counts"], .f-scroll-cards) { width: 100%; }
+.trace-animation-stage.plus-viz:is(.f-scroll-cards, :has([data-layer="e-triples"], [data-layer="e-buckets"], [data-layer="e-counts"])) {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 12px;
   width: 100%;
 }
-.trace-animation-stage:has([data-layer="e-triples"], [data-layer="e-buckets"], [data-layer="e-counts"], [data-layer="f-text"]) > .canvas-card { flex: none; margin-top: 0; }
-.trace-animation-stage > :is([data-layer="f-text"], [data-layer="f-brackets"]) .avc-svg-wrap { max-height: 210px; overflow-y: auto; }
+.trace-animation-stage:is(.f-scroll-cards, :has([data-layer="e-triples"], [data-layer="e-buckets"], [data-layer="e-counts"])) > .canvas-card { flex: none; margin-top: 0; }
+.f-scroll-cards .avc-svg-wrap { max-height: 210px; overflow-y: auto; }
 .trace-animation-stage > [data-layer="e-column-allocation"] { order: 1; }
 .trace-animation-stage [data-avc-svg="e-counts"] [data-avc-key^="idx-"] text { font-size: 10px; }
 .vizwin[data-trace-animation] :is(.c-state-tables, .level-order-tables) { max-width: 580px; }

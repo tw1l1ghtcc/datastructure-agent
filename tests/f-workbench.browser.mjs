@@ -12,7 +12,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 });
 const cases = [
   { id: 'bracket-matching', result: true, field: 'matched' },
-  { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'], caption: /后缀序列/ },
+  { id: 'infix-to-postfix', result: ['12','3','4','2','-','*','+'] },
   { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value', caption: /操作数栈/ },
   { id: 'naive-string-match', result: [0,1,2], caption: /匹配位置/ },
   { id: 'kmp', mode: 'nextval', result: [2], caption: /预处理表.*nextval/ },
@@ -35,8 +35,14 @@ async function assertAnimation(page, run, step) {
     assert.deepEqual(await layer(page, 'brackets').locator('[data-avc-key^="idx-"]').allTextContents(), v.stack.map(item => String(item.i)));
   }
   if (v.operators) {
-    assert.deepEqual(await cells(page, 'operators'), v.operators.slice(-10).map(token => token.text));
-    assert.deepEqual(await cells(page, 'postfix'), v.output.slice(-10).map(token => token.text));
+    const converting = step.algorithm === 'infix-to-postfix';
+    if (converting) assert.equal(await page.locator('.c-state-tables').count(), 0);
+    for (const [name, tokens] of [['operators', v.operators], ['postfix', v.output]]) {
+      assert.deepEqual(await cells(page, name), (converting ? tokens : tokens.slice(-10)).map(token => token.text));
+      if (converting) {
+        assert.deepEqual(await layer(page, name).locator('[data-avc-key^="idx-"]').allTextContents(), tokens.map(token => String(token.index)));
+      }
+    }
   }
   if (step.algorithm === 'expression-evaluation') {
     assert.deepEqual(await cells(page, 'operands'), v.stack.slice(-10).map(display));
@@ -112,7 +118,8 @@ try {
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
     if (caption) assert.match(await page.locator('.c-state-tables').innerText(), caption, id);
-    else assert.match(await layer(page, 'text').getAttribute('aria-label'), /匹配成功/);
+    else if (id === 'bracket-matching') assert.match(await layer(page, 'text').getAttribute('aria-label'), /匹配成功/);
+    else assert.match(await layer(page, 'postfix').getAttribute('aria-label'), /转换完成/);
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
     await assertStep(page, run, index);
@@ -201,6 +208,41 @@ try {
   await assertStep(page, brackets, 0);
   assert.equal(await layer(page, 'text').evaluate(svg => svg.parentElement.scrollTop), 0);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'bracket cards fit the mobile workbench');
+
+  await selectWorkbenchAlgorithm(page, 'infix-to-postfix');
+  await page.fill('#c-data', '('.repeat(20) + '2147483647' + ')'.repeat(20) + ' + 12'.repeat(11));
+  const conversionResponse = page.waitForResponse(response => response.url().endsWith('/api/algorithms/infix-to-postfix/runs'));
+  await page.click('#startBtn');
+  const conversion = await (await conversionResponse).json();
+  assert.deepEqual(conversion.result, ['2147483647', ...Array.from({ length: 11 }, () => ['12', '+']).flat()]);
+  const ruler = page.locator('[data-tl-ruler]');
+  for (let index = 0; index < 21; index++) await ruler.press('ArrowRight');
+  await assertStep(page, conversion, 21);
+  assert.equal(conversion.steps[21].variables.operators.length, 20);
+  const operators = layer(page, 'operators');
+  assert.equal(await operators.locator('[data-avc-key="g-19"] rect').getAttribute('stroke-width'), '2');
+  assert.ok(await operators.evaluate(svg => svg.parentElement.scrollTop > 0));
+  await ruler.press('End');
+  await assertStep(page, conversion, conversion.steps.length - 1);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, conversion, conversion.steps.length - 2);
+  const postfix = layer(page, 'postfix');
+  assert.equal(await postfix.locator('[data-avc-key="g-22"] rect').getAttribute('stroke-width'), '2');
+  assert.ok(await postfix.evaluate(svg => svg.parentElement.scrollTop > 0));
+  await ruler.press('ArrowLeft');
+  await assertStep(page, conversion, conversion.steps.length - 3);
+  assert.equal(await postfix.locator('[data-avc-key="gv-22"]').count(), 0);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'conversion cards fit the mobile workbench');
+
+  await page.click('#c-edit');
+  await page.fill('#c-data', '(1 + 2');
+  const syntaxResponse = page.waitForResponse(response => response.url().endsWith('/api/algorithms/infix-to-postfix/runs'));
+  await page.click('#startBtn');
+  const syntax = await (await syntaxResponse).json();
+  await ruler.press('End');
+  await assertStep(page, syntax, syntax.steps.length - 1);
+  assert.match(syntax.result.error, /左括号未闭合.*下标 0/);
+  assert.match(await postfix.getAttribute('aria-label'), /左括号未闭合.*下标 0/);
 
   assert.deepEqual(errors, []);
 } finally {

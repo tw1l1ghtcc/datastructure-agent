@@ -27,7 +27,7 @@ function bracketFrame(chars, step) {
   ];
 }
 
-function revealBracketCell(host, layer, index) {
+function revealIndexedCell(host, layer, index) {
   const svg = host.querySelector('[data-avc-svg="' + layer + '"]');
   const viewport = svg?.parentElement;
   if (!viewport) return;
@@ -52,6 +52,24 @@ function expressionStacks(v) {
   return [
     tail('f-operators', '运算符栈（栈顶在右）', v.operators.map(token => token.text), true),
     tail('f-postfix', '后缀序列', v.output.map(token => token.text)),
+  ];
+}
+
+function tokenCard(id, title, tokens, roles) {
+  return tokens.length
+    ? indexedCard(id, title, tokens.map(token => token.text), roles, tokens.map(token => token.index))
+    : sequenceLayer(id, title, []);
+}
+
+function conversionFrame(step, previous) {
+  const { operators, output } = step.variables;
+  const appended = output.length > (previous?.variables.output.length ?? 0);
+  let title = '后缀序列（格下为原下标）';
+  if (step.result?.error) title = '已输出词元 · ' + step.result.error;
+  else if (step.done) title += ' · 转换完成';
+  return [
+    tokenCard('f-operators', '运算符栈（底到顶，格下为原下标）', operators, { focus2: [operators.length - 1] }),
+    tokenCard('f-postfix', title, output, { added: appended ? [output.length - 1] : [] }),
   ];
 }
 
@@ -202,10 +220,9 @@ export function createFAnimation(host, explainHost, run, config) {
   const input = run.input;
   const text = Array.from(input.text ?? '', showChar);
   const pattern = Array.from(input.pattern ?? '', showChar);
-  const bracketMatching = run.algorithm === 'bracket-matching';
   const frames = {
     'bracket-matching': step => bracketFrame(text, step),
-    'infix-to-postfix': step => expressionStacks(step.variables),
+    'infix-to-postfix': step => conversionFrame(step, run.steps[step.stepIndex - 1]),
     'expression-evaluation': step => [
       tail('f-operands', '操作数栈（栈顶在右）', step.variables.stack, true),
       ...expressionStacks(step.variables),
@@ -215,23 +232,30 @@ export function createFAnimation(host, explainHost, run, config) {
     'expression-dag': step => expressionDagFrame(step.variables),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
   };
-  const stateTable = bracketMatching ? null : createFStateTable(config, run.algorithm, input);
+  const follow = {
+    'bracket-matching': step => {
+      revealIndexedCell(host, 'f-text', step.variables.i ?? (step.done ? text.length - 1 : 0));
+      revealIndexedCell(host, 'f-brackets', step.variables.stack.length - 1);
+    },
+    'infix-to-postfix': step => {
+      revealIndexedCell(host, 'f-operators', step.variables.operators.length - 1);
+      revealIndexedCell(host, 'f-postfix', step.variables.output.length - 1);
+    },
+  }[run.algorithm];
+  const stateTable = follow ? null : createFStateTable(config, run.algorithm, input);
   const animation = createTraceAnimation(host, explainHost, stateTable, frames[run.algorithm], 'f', { run, config });
-  if (!bracketMatching) return animation;
-  const reveal = step => {
-    revealBracketCell(host, 'f-text', step.variables.i ?? (step.done ? text.length - 1 : 0));
-    revealBracketCell(host, 'f-brackets', step.variables.stack.length - 1);
-  };
+  if (!follow) return animation;
+  host.querySelector('[data-viz-engine="plus-f"] .trace-animation-stage').classList.add('f-scroll-cards');
   return {
     ...animation,
     showStep(step) {
       animation.showStep(step);
-      reveal(step);
+      follow(step);
     },
     playEnterAnimation() {
       animation.playEnterAnimation();
       const step = animation.getStep();
-      if (step) reveal(step);
+      if (step) follow(step);
     },
   };
 }

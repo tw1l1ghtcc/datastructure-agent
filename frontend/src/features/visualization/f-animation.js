@@ -249,18 +249,29 @@ function expressionDagFrame(step, previous) {
   return [graph, stack, ...layers];
 }
 
-function criticalPathFrames(input) {
+function eventTimes(variables, event) {
+  return '早 ' + (variables.earliest[event] ?? '—') + '　迟 ' + (variables.latest[event] ?? '—');
+}
+
+function criticalPathFrames({ input, steps }) {
   const ids = new Map(input.nodes.map((label, index) => [label, nodeId(index)]));
   const edges = routeEdges(input.edges.map(([from, to, weight]) =>
     ({ from: ids.get(from), to: ids.get(to), w: compactLabel(weight, 13) })));
-  const layout = placeGraph(input.nodes.map(label => ({ id: ids.get(label), label: compactLabel(label, 4), event: label })), edges);
+  const nodes = input.nodes.map(event => ({ id: ids.get(event), label: compactLabel(event, 4), event }));
+  let columnWidth = 126;
+  for (const step of steps) {
+    for (const event of input.nodes) {
+      columnWidth = Math.max(columnWidth, eventTimes(step.variables, event).length * 6 + 20);
+    }
+  }
+  const layout = placeGraph(nodes, edges, columnWidth);
   return step => {
     const v = step.variables;
     const critical = new Set(v.criticalEdges);
-    const timed = layout.nodes.map(node => ({
-      ...node,
-      sub: '早 ' + compactLabel(v.earliest[node.event], 8) + '　迟 ' + compactLabel(v.latest[node.event], 8),
-    }));
+    const timed = layout.nodes.map(node => {
+      const sub = eventTimes(v, node.event);
+      return { ...node, sub, fullLabel: node.event + ' · ' + sub };
+    });
     const activities = edges.map((edge, index) => ({
       ...edge, state: index === v.activityIndex ? 'active' : critical.has(index) ? 'tree' : 'idle',
     }));
@@ -287,7 +298,7 @@ export function createFAnimation(host, explainHost, run, config) {
     'naive-string-match': stringMatch,
     kmp: stringMatch,
     'expression-dag': step => expressionDagFrame(step, run.steps[step.stepIndex - 1]),
-    'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
+    'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(run) : null,
   };
   const followExpression = step => {
     const { operators, output, stack, mode } = step.variables;

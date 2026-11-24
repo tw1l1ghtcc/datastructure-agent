@@ -87,8 +87,7 @@ export function createTraceAnimation(host, explainHost, stateTable, frameFor, pa
       const layer = byId.get(svg.dataset.avcSvg);
       svg.setAttribute('role', 'img');
       svg.setAttribute('aria-label', layer.title);
-      if (!split) continue;
-      for (const { id, fullLabel } of layer.data.nodes) {
+      for (const { id, fullLabel } of layer.data.nodes ?? []) {
         if (!fullLabel) continue;
         const circle = svg.querySelector(`[data-avc-key="n-${id}"] circle`);
         if (!circle) continue;

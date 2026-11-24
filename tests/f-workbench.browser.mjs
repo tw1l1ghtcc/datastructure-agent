@@ -80,9 +80,16 @@ async function assertAnimation(page, run, step) {
     const graph = layer(page, 'activities');
     assert.equal(await graph.locator('[data-avc-key^="n-f"]').count(), run.input.nodes.length);
     assert.equal(await graph.locator('[data-avc-key^="e-f"]').count(), run.input.edges.length);
+    const tables = page.locator('.c-state-tables table');
+    assert.equal(await tables.locator('caption', { hasText: /^事件时间$/ }).count(), 0);
+    const activities = tables.filter({ has: page.locator('caption', { hasText: /^活动时差与关键边$/ }) });
+    assert.deepEqual(await activities.locator('tbody tr td:nth-child(4)').allTextContents(),
+      run.input.edges.map((_, index) => display(v.slack[index]?.float)));
     if (step.done && !step.result.error) {
       const critical = graph.locator('[data-avc-key^="e-f"] :is(line, polyline):not([data-role="arrow"])[stroke="#0a6b4a"]');
       assert.equal(await critical.count(), v.criticalEdges.length);
+      const paths = tables.filter({ has: page.locator('caption', { hasText: /^关键路径$/ }) });
+      assert.equal(await paths.locator('tbody tr').count(), step.result.criticalPaths.length);
     }
   }
 }
@@ -183,15 +190,25 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.click('#c-edit');
   const labels = Array.from({ length: 30 }, (_, index) => 'V' + index);
+  labels[29] = 'V29 工序最终联合验收';
   await page.fill('#c-data', labels.join(', '));
-  await page.fill('#f-secondary', [...labels.slice(1).map((label, i) => labels[i] + ', ' + label + ', 1'), 'V0, V1, 2'].join('\n'));
+  await page.fill('#f-secondary', [
+    ...labels.slice(1).map((label, i) => labels[i] + ', ' + label + ', ' + (i === 0 ? '1' : '999999999.999')),
+    'V0, V1, 1000000000',
+  ].join('\n'));
   const longResponse = page.waitForResponse(response => response.url().endsWith('/api/algorithms/critical-path/runs'));
   await page.click('#startBtn');
   const longRun = await (await longResponse).json();
-  assert.equal(longRun.result.duration, 30);
+  const duration = (1_000_000_000_000 + 28 * 999_999_999_999) / 1000;
+  assert.equal(longRun.result.duration, duration);
+  assert.equal(longRun.result.activities[0].float, 999999999);
   await page.click('[data-t="last"]');
   await assertStep(page, longRun, longRun.steps.length - 1);
   const graph = layer(page, 'activities');
+  const eventTimes = '早 ' + duration + '　迟 ' + duration;
+  const finalEvent = graph.locator('[data-avc-key="n-f29"] circle title');
+  assert.equal(await graph.locator('[data-avc-key="ns-f29"]').textContent(), eventTimes);
+  assert.equal(await finalEvent.textContent(), labels[29] + ' · ' + eventTimes);
   const parallel = await graph.locator('[data-avc-key^="e-f0-f1"] polyline:not([data-role="arrow"])').evaluateAll(edges => edges.map(edge => edge.getAttribute('points')));
   assert.equal(parallel.length, 2);
   assert.notEqual(parallel[0], parallel[1]);
@@ -204,6 +221,12 @@ try {
     body.scrollLeft = body.scrollWidth;
     return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
   }), 'the graph scrolls within the workbench');
+  const completedViewBox = await graph.getAttribute('viewBox');
+  await page.locator('[data-tl-ruler]').press('Home');
+  await assertStep(page, longRun, 0);
+  assert.equal(await graph.locator('[data-avc-key="ns-f29"]').textContent(), '早 0　迟 —');
+  assert.equal(await finalEvent.textContent(), labels[29] + ' · 早 0　迟 —');
+  assert.equal(await graph.getAttribute('viewBox'), completedViewBox);
 
   await selectWorkbenchAlgorithm(page, 'bracket-matching');
   const bracketText = '🙂\t' + '('.repeat(117) + ']';

@@ -26,11 +26,7 @@ function criticalPathTables(input, v) {
   const rows = input.edges.map(([from, to, weight], index) => [
     from, to, weight, v.slack[index]?.float, v.criticalEdges.includes(index) ? '是' : '—',
   ]);
-  const tables = [
-    table('事件时间', ['事件', '最早时刻', '最迟时刻'], input.nodes.map(node => [node, v.earliest[node], v.latest[node]]),
-      index => input.nodes[index] === v.currentNode),
-    table('活动时差与关键边', ['起点', '终点', '工期', '时差', '关键'], rows, index => index === v.activityIndex),
-  ];
+  const tables = [table('活动时差与关键边', ['起点', '终点', '工期', '时差', '关键'], rows, index => index === v.activityIndex)];
   if (v.criticalPaths) tables.unshift(table('关键路径', ['活动顺序'], v.criticalPaths.map(path => [path.map(edgeText).join('，')])));
   return tables;
 }

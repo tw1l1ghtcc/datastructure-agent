@@ -70,14 +70,17 @@
 #visualization-panel:has(.vizwin:is([data-trace-animation], [data-trace-canvas])) { height: 720px; }
 .vizwin[data-trace-animation] .viewport-scene { width: max-content; min-width: 100%; padding: 6px 12px 14px; }
 .vizwin[data-trace-animation]:has(.e-matrix-animation) .viewport-scene { width: 100%; height: 100%; }
-.e-matrix-animation { display: grid; grid-template: minmax(0, 1fr) auto / repeat(2, minmax(0, 1fr)); gap: 12px; height: 100%; min-height: 0; }
-.e-matrix-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; border: 1px solid var(--bl-line); border-radius: 8px; }
-.e-matrix-pane h3 { padding: 9px 13px; border-bottom: 1px solid var(--bl-line); font-size: 13px; }
+.e-matrix-animation { display: grid; grid-template: minmax(0, 1fr) auto / minmax(0, 1fr) 40px minmax(0, 1fr); height: 100%; min-height: 0; }
+.e-matrix-lane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+.e-matrix-lane h3 { padding: 12px 4px 0; font-size: 14px; text-align: center; }
 .e-matrix-track { min-width: 0; min-height: 0; overflow: auto; }
 .e-matrix-track:focus-visible { outline: 2px solid var(--bl-accent); outline-offset: -2px; }
-.e-matrix-empty { padding: 16px; color: var(--bl-text-dim); }
-.e-matrix-columns { grid-column: 1 / -1; grid-template-rows: auto 170px; }
+.e-matrix-tiles rect:has(> title) { pointer-events: auto; }
+.e-matrix-empty { display: grid; place-items: center; height: 100%; color: var(--bl-text-dim); }
+.e-matrix-direction { place-self: center; color: var(--bl-accent); font-size: 25px; }
+.e-matrix-columns { grid-column: 1 / -1; grid-template-rows: auto 122px; border-top: 1px solid var(--bl-line); }
 .e-matrix-columns .e-matrix-track { overflow-y: hidden; }
+.e-matrix-columns .e-matrix-tiles { margin-inline: auto; }
 .trace-animation-stage.plus-viz { width: max-content; height: auto; min-height: 0; overflow: visible; margin-bottom: 14px; }
 .trace-animation-full,
 .trace-animation-full .trace-animation-stage.plus-viz { width: 100%; height: 100%; }

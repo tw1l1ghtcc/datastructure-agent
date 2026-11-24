@@ -40,12 +40,12 @@ async function assertFullCanvas(page, id) {
 
 async function assertMatrixLayout(page) {
   const view = page.locator('.e-matrix-animation');
-  const panes = view.locator('.e-matrix-pane');
-  const [left, right, columns] = await Promise.all([0, 1, 2].map(index => panes.nth(index).boundingBox()));
+  const lanes = view.locator('.e-matrix-lane');
+  const [left, right, columns] = await Promise.all([0, 1, 2].map(index => lanes.nth(index).boundingBox()));
   const bounds = await view.boundingBox();
   assert.ok(left.width > 0 && Math.abs(left.width - right.width) <= 1);
   assert.ok(left.x + left.width < right.x && left.y === right.y);
-  assert.ok(columns.y > left.y + left.height && Math.abs(columns.width - bounds.width) <= 1);
+  assert.ok(columns.y >= left.y + left.height - 1 && Math.abs(columns.width - bounds.width) <= 1);
   assert.equal(await page.locator('.e-state-tables').count(), 0);
 }
 
@@ -79,8 +79,8 @@ async function assertStep(page, run, index) {
       if (next != null) assert.equal(await svg.locator('[data-avc-key="link-n' + id + '-n' + next + '"]').count(), 1);
     }
   } else if (v.triples) {
-    assert.deepEqual(await cells(page, 'e-triples'), v.triples.flatMap(({ i, j, e }) => [i, j, e].map(display)));
-    const expected = v.out ? v.out.flatMap(({ i, j, e }) => [i, j, e].map(display)) : Array(v.triples.length * 3).fill('—');
+    assert.deepEqual(await cells(page, 'e-triples'), v.triples.map(triple => display(triple.e)));
+    const expected = v.out ? v.out.map(triple => display(triple.e)) : Array(v.triples.length).fill('—');
     assert.deepEqual(await cells(page, 'e-transpose'), expected);
   } else if (step.algorithm === 'array-list-delete-range' || step.array.length <= 10) {
     assert.deepEqual(await cells(page, 'e-array'), step.array.map(display));
@@ -320,11 +320,13 @@ try {
   await page.click('#prevBtn');
   await assertStep(page, matrix, matrix.steps.length - 2);
   const columnGrid = layer(page, 'e-column-positions');
-  assert.equal(await columnGrid.locator('[data-avc-key="gv-0,63"]').textContent(), '1');
-  assert.equal(await columnGrid.locator('[data-avc-key="gv-1,63"]').textContent(), '64');
+  assert.equal(await columnGrid.locator('[data-avc-key="gv-63"]').textContent(), '1 → 64');
+  assert.equal(await columnGrid.locator('[data-avc-key="idx-63"]').textContent(), '原列 63');
+  assert.equal(await layer(page, 'e-triples').locator('[data-avc-key="idx-63"]').textContent(), '63 · (0,63)');
+  assert.equal(await layer(page, 'e-transpose').locator('[data-avc-key="idx-63"]').textContent(), '63 · (63,0)');
   for (const id of ['e-triples', 'e-transpose']) {
     const svg = layer(page, id);
-    assert.equal(await svg.locator('[data-avc-key="g-63,0"] rect').getAttribute('stroke-width'), '2');
+    assert.equal(await svg.locator('[data-avc-key="g-63"] rect').getAttribute('stroke-width'), '2');
     assert.ok(await svg.evaluate(element => element.closest('.e-matrix-track').scrollTop > 0));
   }
   assert.ok(await columnGrid.evaluate(svg => svg.closest('.e-matrix-track').scrollLeft > 0));

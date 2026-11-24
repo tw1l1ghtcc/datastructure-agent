@@ -133,11 +133,11 @@
 #tree-fields section, #tree-children { display: grid; gap: 10px; }
 .tree-child-row { display: grid; grid-template-columns: minmax(40px, .5fr) repeat(2, minmax(0, 1fr)); gap: 12px; align-items: center; overflow-wrap: anywhere; }
 #tree-fields [aria-invalid="true"] { border-color: #a92e35; }
-.level-order-tables, .e-state-tables { display: grid; gap: 16px; }
-:is(.level-order-tables, .e-state-tables) tr[data-current="true"] { background: #fff0d0; }
-:is(.g-state-tables, .e-state-tables) .uf-table { width: 100%; min-width: 0; }
-:is(.g-state-tables, .e-state-tables) caption { text-align: left; font-weight: 600; padding: 4px 0; }
-:is(.g-state-tables, .e-state-tables) :is(th, td) { padding: 8px 10px; overflow-wrap: anywhere; }
+.level-order-tables { display: grid; gap: 16px; }
+.level-order-tables tr[data-current="true"] { background: #fff0d0; }
+.g-state-tables .uf-table { width: 100%; min-width: 0; }
+.g-state-tables caption { text-align: left; font-weight: 600; padding: 4px 0; }
+.g-state-tables :is(th, td) { padding: 8px 10px; overflow-wrap: anywhere; }
 
 .d-state-tables { display: grid; gap: 16px; max-height: 380px; overflow: auto; padding: 4px; }
 .d-state-tables caption { text-align: left; font-weight: 600; padding: 5px 0; }

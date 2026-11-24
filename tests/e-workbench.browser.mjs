@@ -20,7 +20,7 @@ const examples = [
   ['kth-from-end', { nodeId: 2, value: 1 }],
   ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }],
   ['radix-sort', [3, 10, 21, 21]],
-  ['counting-sort', [-1, 0, 2, 2], '输出数组'],
+  ['counting-sort', [-1, 0, 2, 2]],
 ];
 
 const layer = (page, id) => page.locator('[data-viz-engine="plus-e"] [data-avc-svg="' + id + '"]');
@@ -75,13 +75,6 @@ async function assertStep(page, run, index) {
   }
 }
 
-const tableRows = (page, title) => page.locator('.e-state-tables table')
-  .filter({ has: page.locator('caption', { hasText: title }) }).locator('tbody tr');
-
-async function values(rows, column) {
-  return rows.evaluateAll((elements, index) => elements.map(row => row.cells[index].textContent), column);
-}
-
 let browser;
 try {
   const base = await new Promise((resolve, reject) => {
@@ -98,16 +91,15 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base);
 
-  for (const [algorithm, expected, title] of examples) {
+  for (const [algorithm, expected] of examples) {
     await selectWorkbenchAlgorithm(page, algorithm);
     await page.click('#fillDemo');
     const run = await start(page, algorithm);
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
-    if (algorithm === 'sparse-matrix-transpose' || algorithm === 'radix-sort') {
-      assert.equal(await page.locator('.e-state-tables').count(), 0);
-    } else if (!title) {
+    assert.equal(await page.locator('.e-state-tables').count(), 0);
+    if (algorithm.startsWith('array-list-') || run.steps[0].variables.nodes) {
       const id = algorithm.startsWith('array-list-') ? 'e-array' : 'e-list';
       await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
@@ -199,7 +191,6 @@ try {
       assert.match(await svg.locator('[data-avc-key="name"]').textContent(), /找到结点 #2，值 1/);
       assert.equal(await svg.locator('[data-avc-key="ne-n2-0"] line').getAttribute('stroke'), '#0a6b4a');
     }
-    if (title) assert.ok(await page.locator('.e-state-tables caption', { hasText: title }).count(), algorithm);
     await page.click('#prevBtn');
     const step = run.steps.at(-2);
     await assertStep(page, run, step.stepIndex);
@@ -252,32 +243,78 @@ try {
   await page.click('#fillDemo');
   await start(page, 'counting-sort');
   const ruler = page.locator('[data-tl-ruler]');
-  const counts = tableRows(page, '计数表');
+  const counts = layer(page, 'e-counts');
   await ruler.press('End');
-  assert.deepEqual(await values(counts, 2), ['0', '1', '2', '2']);
+  assert.deepEqual(await cells(page, 'e-counts'), ['0', '1', '2', '2']);
   await ruler.press('Home');
   await ruler.press('ArrowRight');
-  assert.deepEqual(await values(counts, 2), ['0', '0', '0', '0']);
+  assert.deepEqual(await cells(page, 'e-counts'), ['0', '0', '0', '0']);
   await ruler.press('ArrowRight');
-  assert.deepEqual(await values(counts, 2), ['0', '0', '0', '1']);
   assert.deepEqual(await cells(page, 'e-counts'), ['0', '0', '0', '1']);
   await ruler.press('ArrowLeft');
-  assert.deepEqual(await values(counts, 2), ['0', '0', '0', '0']);
   assert.deepEqual(await cells(page, 'e-counts'), ['0', '0', '0', '0']);
 
   await page.click('#e-edit');
-  await page.fill('#e-data', '-2500, 2499, -2500');
+  const wideInput = Array.from({ length: 24 }, (_, index) => index % 2 === 0 ? -2500 : 2499);
+  await page.fill('#e-data', wideInput.join(', '));
   const wide = await start(page, 'counting-sort');
+  const sortedWide = [...wideInput].sort((a, b) => a - b);
+  assert.deepEqual(wide.result, sortedWide);
+  assert.deepEqual(await cells(page, 'e-array'), wideInput.map(String));
   assert.ok(wide.steps.length > 5000);
   assert.ok(await page.locator('.tl-tick').count() <= 100);
+  await ruler.press('ArrowRight');
+  await ruler.press('ArrowRight');
+  await ruler.press('ArrowRight');
+  await assertStep(page, wide, 3);
+  assert.match(await counts.getAttribute('aria-label'), /下标 4979–4999，共 5000 项/);
+  assert.equal(await counts.locator('[data-avc-key="idx-20"]').textContent(), '2499');
+  assert.equal(await counts.locator('[data-avc-key="gv-20"]').textContent(), '1');
+  assert.equal(await counts.locator('[data-avc-key="g-20"] rect').getAttribute('stroke-width'), '2');
+  assert.equal((await cells(page, 'e-counts')).length, 21);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wide, 2);
+  assert.match(await counts.getAttribute('aria-label'), /下标 0–20/);
+  assert.equal(await counts.locator('[data-avc-key="idx-0"]').textContent(), '-2500');
+  assert.equal(await counts.locator('[data-avc-key="gv-0"]').textContent(), '1');
   await ruler.press('End');
   await assertStep(page, wide, wide.steps.length - 1);
-  assert.deepEqual(await values(tableRows(page, '输出数组'), 1), ['-2500', '-2500', '2499']);
+  assert.deepEqual(await cells(page, 'e-output'), sortedWide.map(String));
+  assert.equal(await page.locator('.e-state-tables').count(), 0);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wide, wide.steps.length - 2);
+  const output = layer(page, 'e-output');
+  assert.equal(await output.locator('[data-avc-key="g-0"] rect').getAttribute('stroke-width'), '2');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wide, wide.steps.length - 3);
+  assert.equal(await output.locator('[data-avc-key="gv-0"]').textContent(), '—');
+  assert.match(await counts.getAttribute('aria-label'), /下标 4979–4999/);
+  assert.equal(await counts.locator('[data-avc-key="gv-20"]').textContent(), '12');
+  await ruler.press('End');
   await page.click('#e-edit');
   await page.fill('#e-data', '-2500, 2500');
   assert.equal((await start(page, 'counting-sort', 400)).error.code, 'INVALID_INPUT');
   await page.waitForFunction(() => document.querySelector('#msgBox').textContent.includes('值域跨度'));
   await assertStep(page, wide, wide.steps.length - 1);
+  await page.fill('#e-data', '');
+  const emptyCount = await start(page, 'counting-sort');
+  await ruler.press('End');
+  await assertStep(page, emptyCount, emptyCount.steps.length - 1);
+  assert.deepEqual(emptyCount.result, []);
+  assert.deepEqual(await cells(page, 'e-output'), []);
+  assert.equal(await counts.count(), 0);
+  await page.click('#e-edit');
+  const int32Labels = Array.from({ length: 4 }, (_, index) => -2147483648 + index);
+  await page.fill('#e-data', int32Labels.join(', '));
+  const int32Count = await start(page, 'counting-sort');
+  await ruler.press('ArrowRight');
+  await assertStep(page, int32Count, 1);
+  const labels = counts.locator('[data-avc-key^="idx-"] text');
+  assert.deepEqual(await labels.allTextContents(), int32Labels.map(String));
+  assert.ok(await counts.evaluate(svg => [...svg.querySelectorAll('[data-avc-key^="idx-"]')].every((label, index) => {
+    const cell = svg.querySelector('[data-avc-key="g-' + index + '"] rect');
+    return label.querySelector('text').getBBox().width <= cell.getBBox().width;
+  })), '32-bit integer labels fit their count cells');
 
   await selectWorkbenchAlgorithm(page, 'singly-linked-list-insert');
   await page.fill('#e-pos', '0');

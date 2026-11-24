@@ -1,6 +1,5 @@
 import { gridLayer, linkLayer } from '../../../vendor/plus/vendor/engine/model.js';
-import { createECountingStateTable } from './e-state-table.js';
-import { createTraceAnimation, sequenceLayer, windowStart } from './trace-animation.js';
+import { createTraceAnimation, windowStart } from './trace-animation.js';
 import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
 
 const fullCanvasLabels = new Map([
@@ -149,21 +148,23 @@ function radixFrame(step, previous) {
 }
 
 function countingFrame(run, step, init) {
-  const layers = [sequenceLayer('e-array', '输入数组', step.array)];
+  const layers = [indexedCard('e-array', '输入数组', step.array)];
   const snapshot = countingSnapshot(run, step, init);
-  if (!snapshot) {
-    if (step.done) layers.push(sequenceLayer('e-output', '输出数组', step.result ?? []));
-    return layers;
+  const { countDiff } = step.variables;
+  const output = step.variables.output ?? (step.done ? step.result ?? [] : null);
+  if (snapshot) {
+    const { min, counts, current } = snapshot;
+    const size = 21;
+    const first = windowStart(counts.length, size, current);
+    const shown = counts.slice(first, first + size);
+    const range = counts.length > size ? ` · 下标 ${first}–${first + shown.length - 1}，共 ${counts.length} 项` : '';
+    layers.push(indexedCard('e-counts', '计数（格下为数值）' + range, shown,
+      { swap: countDiff ? [countDiff.index - first] : [] }, shown.map((_, offset) => min + first + offset)));
   }
-  const { min, counts, current } = snapshot;
-  const v = step.variables;
-  layers.push(sequenceLayer('e-counts', '计数表（列标题为对应数值）', counts,
-    { swap: [v.countDiff?.index] }, { first: windowStart(counts.length, 10, current), indexBase: min }));
-  const out = v.output;
-  if (out) {
+  if (output) {
     const previous = run.steps[step.stepIndex - 1]?.variables.output;
-    const placed = step.event === 'place_output' ? out.findIndex((value, i) => value !== (previous?.[i] ?? null)) : -1;
-    layers.push(sequenceLayer('e-output', '输出数组', out, { added: [placed] }));
+    const placed = step.event === 'place_output' ? output.findIndex((value, i) => value !== (previous?.[i] ?? null)) : -1;
+    layers.push(indexedCard('e-output', '输出数组', output.map(value => value ?? '—'), { added: placed < 0 ? [] : [placed] }));
   }
   return layers;
 }
@@ -180,6 +181,5 @@ export function createEAnimation(host, explainHost, run, config) {
     radix: step => radixFrame(step, previous(step)),
     counting: step => countingFrame(run, step, init),
   };
-  const stateTable = config.view === 'counting' ? createECountingStateTable(run, init) : null;
-  return createTraceAnimation(host, explainHost, stateTable, frames[config.view], 'e', { run, config, fillViewport });
+  return createTraceAnimation(host, explainHost, null, frames[config.view], 'e', { run, config, fillViewport });
 }

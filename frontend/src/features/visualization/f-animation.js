@@ -1,5 +1,5 @@
 import { graphLayer, gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
-import { createFStateTable } from './f-state-table.js';
+import { createCriticalPathStateTable } from './f-state-table.js';
 import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer } from './trace-animation.js';
 
 const WINDOW_SIZE = 10;
@@ -50,13 +50,6 @@ function revealCell(host, layer, key) {
   else if (bounds.bottom > view.bottom - 4) viewport.scrollTop += bounds.bottom - view.bottom + 4;
 }
 
-function expressionStacks(v) {
-  return [
-    tail('f-operators', '运算符栈（栈顶在右）', v.operators.map(token => token.text), true),
-    tail('f-postfix', '后缀序列', v.output.map(token => token.text)),
-  ];
-}
-
 function tokenCard(id, title, tokens, roles) {
   return tokens.length
     ? indexedCard(id, title, tokens.map(token => token.text), roles, tokens.map(token => token.index))
@@ -81,17 +74,19 @@ function operandCard(step) {
 }
 
 function expressionFrame(step, previous) {
-  const { operators, output, stack, mode } = step.variables;
+  const { operators, output, mode, nodes } = step.variables;
+  const evaluating = step.algorithm === 'expression-evaluation';
   const appended = step.event !== 'postfix' && output.length > (previous?.variables.output.length ?? 0);
-  const active = stack ? evaluationTokenIndex(step) : -1;
+  const active = evaluating ? evaluationTokenIndex(step) : -1;
   const roles = {
     added: appended ? [output.length - 1] : [],
     [step.result?.error ? 'swap' : 'focus1']: active >= 0 ? [active] : [],
   };
   let title = '后缀序列（格下为原下标）';
-  if (!stack && step.done) title = step.result?.error ? '已输出词元 · ' + step.result.error : title + ' · 转换完成';
+  if (!evaluating && step.result?.error && !nodes?.length) title = '已输出词元 · ' + step.result.error;
+  else if (step.algorithm === 'infix-to-postfix' && step.done) title += ' · 转换完成';
   const layers = [];
-  if (stack) layers.push(operandCard(step));
+  if (evaluating) layers.push(operandCard(step));
   if (mode !== 'postfix') {
     layers.push(tokenCard('f-operators', '运算符栈（底到顶，格下为原下标）', operators, { focus2: [operators.length - 1] }));
   }
@@ -165,7 +160,7 @@ function stringMatchFrame(text, pattern, step) {
 }
 
 // Derive display columns from the visible dependencies; event order and results come from the run.
-function placeGraph(nodes, edges) {
+function placeGraph(nodes, edges, columnWidth = 126) {
   const outgoing = new Map(nodes.map(({ id }) => [id, []]));
   const degree = new Map(nodes.map(({ id }) => [id, 0]));
   for (const { from, to } of edges) {
@@ -196,7 +191,7 @@ function placeGraph(nodes, edges) {
   return {
     nodes: [...columns.entries()].flatMap(([col, group]) =>
       group.map((node, row) => ({ ...node, x: (col + 0.5) / count, y: (row + 0.5) / group.length }))),
-    canvasWidth: Math.max(420, 86 + count * 126),
+    canvasWidth: Math.max(420, 86 + count * columnWidth),
     canvasHeight: Math.max(234, 84 + rows * 78),
   };
 }
@@ -228,21 +223,30 @@ function graphCard(id, title, layout, edges, roles) {
   });
 }
 
-function expressionDagFrame(v) {
-  const layers = expressionStacks(v);
+function expressionDagFrame(step, previous) {
+  const v = step.variables;
+  const layers = expressionFrame(step, previous);
   if (!v.nodes.length) return layers;
-  const nodes = v.nodes.map(node => ({
-    id: nodeId(node.id), label: compactLabel(node.token, 5),
-    sub: Object.hasOwn(v.cache, node.id) ? '= ' + compactLabel(v.cache[node.id], 12) : '#' + node.id,
-  }));
+  const nodes = v.nodes.map(node => {
+    const label = compactLabel(node.token, 5);
+    const number = '#' + node.id;
+    const sub = Object.hasOwn(v.cache, node.id) ? number + ' = ' + v.cache[node.id]
+      : label !== node.token ? number + ' · ' + node.token : number;
+    return { id: nodeId(node.id), label, sub, badge: v.root === node.id ? '根' : undefined };
+  });
+  const error = step.result?.error;
+  const current = error ? v.nodes.find(node => node.index === v.index)?.id : v.currentNode;
   const edges = routeEdges(v.edges.map(([from, to, role]) => ({
     from: nodeId(from), to: nodeId(to), w: role === '左操作数' ? '左' : '右',
-    state: to === v.currentNode ? 'active' : 'idle',
+    state: to === current ? 'active' : 'idle',
   })));
-  const graph = graphCard('f-expression-dag', '表达式依赖图（箭头指向使用节点）', placeGraph(nodes, edges), edges, {
-    swap: v.currentNode == null ? [] : [nodeId(v.currentNode)], done: v.order.map(nodeId),
+  const title = error ? '表达式依赖图 · ' + error : '表达式依赖图（箭头指向使用节点）';
+  const columnWidth = Math.max(126, ...nodes.map(node => node.sub.length * 6 + 20));
+  const graph = graphCard('f-expression-dag', title, placeGraph(nodes, edges, columnWidth), edges, {
+    swap: current == null ? [] : [nodeId(current)], done: v.order.map(nodeId),
   });
-  return [graph, tail('f-build-stack', '构图栈（节点编号，栈顶在右）', v.stack, true), ...layers];
+  const stack = indexedCard('f-build-stack', '构图栈（底到顶）', v.stack, { focus2: [v.stack.length - 1] });
+  return [graph, stack, ...layers];
 }
 
 function criticalPathFrames(input) {
@@ -282,14 +286,15 @@ export function createFAnimation(host, explainHost, run, config) {
     'expression-evaluation': expression,
     'naive-string-match': stringMatch,
     kmp: stringMatch,
-    'expression-dag': step => expressionDagFrame(step.variables),
+    'expression-dag': step => expressionDagFrame(step, run.steps[step.stepIndex - 1]),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(input) : null,
   };
   const followExpression = step => {
     const { operators, output, stack, mode } = step.variables;
-    const active = stack ? evaluationTokenIndex(step) : -1;
+    const evaluating = step.algorithm === 'expression-evaluation';
+    const active = evaluating ? evaluationTokenIndex(step) : -1;
     const position = step.event === 'postfix' ? 0 : output.length - 1;
-    if (stack) revealCell(host, 'f-operands', stack.length - 1);
+    if (evaluating) revealCell(host, 'f-operands', stack.length - 1);
     if (mode !== 'postfix') revealCell(host, 'f-operators', operators.length - 1);
     revealCell(host, 'f-postfix', active >= 0 ? active : position);
   };
@@ -310,8 +315,12 @@ export function createFAnimation(host, explainHost, run, config) {
     'expression-evaluation': followExpression,
     'naive-string-match': followMatch,
     kmp: followMatch,
+    'expression-dag': step => {
+      followExpression(step);
+      revealCell(host, 'f-build-stack', step.variables.stack.length - 1);
+    },
   }[run.algorithm];
-  const stateTable = follow ? null : createFStateTable(run.algorithm, input);
+  const stateTable = follow ? null : createCriticalPathStateTable(input);
   const animation = createTraceAnimation(host, explainHost, stateTable, frames[run.algorithm], 'f', { run, config });
   if (!follow) return animation;
   host.querySelector('[data-viz-engine="plus-f"] .trace-animation-stage').classList.add('f-scroll-cards');

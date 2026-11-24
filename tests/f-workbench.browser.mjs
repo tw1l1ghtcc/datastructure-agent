@@ -16,7 +16,7 @@ const cases = [
   { id: 'expression-evaluation', mode: 'postfix', result: -8, field: 'value' },
   { id: 'naive-string-match', result: [0,1,2] },
   { id: 'kmp', mode: 'nextval', result: [2] },
-  { id: 'expression-dag', result: 25, field: 'value', caption: /依赖边/ },
+  { id: 'expression-dag', result: 25, field: 'value' },
   { id: 'critical-path', result: 5, field: 'duration', caption: /关键路径/ },
 ];
 
@@ -45,13 +45,10 @@ async function assertAnimation(page, run, step) {
     assert.deepEqual(await layer(page, 'brackets').locator('[data-avc-key^="idx-"]').allTextContents(), v.stack.map(item => String(item.i)));
   }
   if (v.operators) {
-    const fullExpression = step.algorithm === 'infix-to-postfix' || step.algorithm === 'expression-evaluation';
-    if (fullExpression) assert.equal(await page.locator('.c-state-tables').count(), 0);
+    assert.equal(await page.locator('.c-state-tables').count(), 0);
     for (const [name, tokens] of [['operators', v.operators], ['postfix', v.output]]) {
-      assert.deepEqual(await cells(page, name), (fullExpression ? tokens : tokens.slice(-10)).map(token => token.text));
-      if (fullExpression) {
-        assert.deepEqual(await layer(page, name).locator('[data-avc-key^="idx-"]').allTextContents(), tokens.map(token => String(token.index)));
-      }
+      assert.deepEqual(await cells(page, name), tokens.map(token => token.text));
+      assert.deepEqual(await layer(page, name).locator('[data-avc-key^="idx-"]').allTextContents(), tokens.map(token => String(token.index)));
     }
   }
   if (step.algorithm === 'expression-evaluation') {
@@ -70,11 +67,13 @@ async function assertAnimation(page, run, step) {
   }
   if (step.algorithm === 'expression-dag' && v.nodes.length) {
     const graph = layer(page, 'expression-dag');
+    assert.deepEqual(await cells(page, 'build-stack'), v.stack.map(display));
     assert.equal(await graph.locator('[data-avc-key^="n-f"]').count(), v.nodes.length);
     assert.equal(await graph.locator('[data-avc-key^="e-f"]').count(), v.edges.length);
-    if (step.done) {
+    if (step.done && !step.result.error) {
       const root = graph.locator('[data-avc-key="ns-f' + v.root + '"]');
-      assert.equal(await root.textContent(), '= ' + run.result.value);
+      assert.equal(await root.textContent(), '#' + v.root + ' = ' + run.result.value);
+      assert.equal(await graph.locator('[data-avc-key="nb-f' + v.root + '"]').textContent(), '根');
     }
   }
   if (step.algorithm === 'critical-path') {
@@ -136,7 +135,17 @@ try {
     else if (id === 'expression-evaluation') assert.match(await layer(page, 'operands').getAttribute('aria-label'), /结果 -8/);
     else if (id === 'naive-string-match') assert.match(await layer(page, 'matches').getAttribute('aria-label'), /3 处/);
     else if (id === 'kmp') assert.match(await layer(page, 'kmp-table').getAttribute('aria-label'), /当前使用 nextval/);
-    else assert.match(await layer(page, 'postfix').getAttribute('aria-label'), /转换完成/);
+    else if (id === 'expression-dag') {
+      const shared = run.result.nodes.find(node => node.token === '+');
+      const graph = layer(page, 'expression-dag');
+      const pair = '-f' + shared.id + '-f' + run.result.root;
+      assert.deepEqual(await graph.locator('[data-avc-key^="w' + pair + '"]').allTextContents(), ['左', '右']);
+      const edges = await graph.locator('[data-avc-key^="e' + pair + '"] polyline:not([data-role="arrow"])')
+        .evaluateAll(elements => elements.map(element => element.getAttribute('points')));
+      assert.equal(edges.length, 2);
+      assert.notEqual(edges[0], edges[1]);
+      assert.equal(run.steps.filter(step => step.event === 'evaluate' && step.variables.currentNode === shared.id).length, 1);
+    } else assert.match(await layer(page, 'postfix').getAttribute('aria-label'), /转换完成/);
     await page.click('#prevBtn');
     const index = run.steps.length - 2;
     await assertStep(page, run, index);
@@ -395,6 +404,47 @@ try {
   await assertStep(page, emptyKmp, emptyKmp.steps.length - 1);
   assert.deepEqual(emptyKmp.result, [0]);
   assert.equal(await preprocessing.count(), 0);
+
+  await selectWorkbenchAlgorithm(page, 'expression-dag');
+  const startDag = async expression => {
+    await page.fill('#c-data', expression);
+    const pending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/expression-dag/runs'));
+    await page.click('#startBtn');
+    const response = await pending;
+    assert.equal(response.status(), 200);
+    return response.json();
+  };
+  const wideDag = await startDag(Array(10).fill('(2147483647/3)').join(' + '));
+  await ruler.press('End');
+  await assertStep(page, wideDag, wideDag.steps.length - 1);
+  const dagGraph = layer(page, 'expression-dag');
+  const rootLabel = dagGraph.locator('[data-avc-key="ns-f' + wideDag.result.root + '"]');
+  const expectedValue = Array(10).fill(2147483647 / 3).reduce((sum, term) => sum + term, 0);
+  assert.equal(wideDag.result.value, expectedValue);
+  assert.equal(await rootLabel.textContent(), '#' + wideDag.result.root + ' = ' + expectedValue);
+  assert.equal(await dagGraph.locator('[data-avc-key="ns-f0"]').textContent(), '#0 = 2147483647');
+  assert.equal((await cells(page, 'postfix')).length, 39);
+  assert.ok(await dagGraph.evaluate(svg => {
+    const box = svg.querySelector('.avc-layer').getBBox();
+    const { width, height } = svg.viewBox.baseVal;
+    return box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height;
+  }), 'full cache labels fit the graph canvas');
+  assert.ok(await page.locator('[data-viz-body]').evaluate(body => {
+    body.scrollLeft = body.scrollWidth;
+    return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
+  }), 'a wide DAG scrolls within the mobile workbench');
+  await ruler.press('ArrowLeft');
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wideDag, wideDag.steps.length - 3);
+  assert.equal(await rootLabel.textContent(), '#' + wideDag.result.root);
+
+  await page.click('#c-edit');
+  const badDag = await startDag('8/(2-2)');
+  await ruler.press('End');
+  await assertStep(page, badDag, badDag.steps.length - 1);
+  assert.match(await dagGraph.getAttribute('aria-label'), /除数为零.*下标 1/);
+  const failed = badDag.steps.at(-1).variables.nodes.find(node => node.token === '/');
+  assert.equal(await dagGraph.locator('[data-avc-key="n-f' + failed.id + '"] circle').getAttribute('stroke-width'), '2.4');
 
   assert.deepEqual(errors, []);
 } finally {

@@ -20,17 +20,9 @@ function table(caption, headers, rows, selected = () => false) {
   return element;
 }
 
-const tokenRows = tokens => tokens.map(({ text, index }) => [text, index]);
 const edgeText = edge => edge[0] + ' → ' + edge[1] + '（' + edge[2] + '）';
 
-function graphTables(algorithm, input, v) {
-  if (algorithm === 'expression-dag') {
-    return [
-      table('子表达式节点', ['编号', '词元', '左依赖', '右依赖', '缓存值'],
-        v.nodes.map(node => [node.id, node.token, node.left, node.right, v.cache[node.id]]), index => index === v.currentNode),
-      table('依赖边', ['操作数节点', '使用节点', '角色'], v.edges),
-    ];
-  }
+function criticalPathTables(input, v) {
   const rows = input.edges.map(([from, to, weight], index) => [
     from, to, weight, v.slack[index]?.float, v.criticalEdges.includes(index) ? '是' : '—',
   ]);
@@ -43,27 +35,19 @@ function graphTables(algorithm, input, v) {
   return tables;
 }
 
-function outcome(algorithm, value) {
+function outcome(value) {
   if (value?.error) return value.error;
-  if (algorithm === 'critical-path') return '工期 ' + value.duration + (value.morePaths ? '，表中展示前 8 条关键路径' : '');
-  return value?.value ?? value;
+  return '工期 ' + value.duration + (value.morePaths ? '，表中展示前 8 条关键路径' : '');
 }
 
-export function createFStateTable(algorithm, input) {
+export function createCriticalPathStateTable(input) {
   const element = document.createElement('div');
   element.className = 'c-state-tables';
   return {
     element,
     showStep(step) {
-      const v = step.variables;
-      const views = graphTables(algorithm, input, v);
-      if (v.operators) {
-        views.push(
-          table('运算符栈（底到顶）', ['词元', '原下标'], tokenRows(v.operators)),
-          table('后缀序列', ['词元', '原下标'], tokenRows(v.output)),
-        );
-      }
-      if (step.done) views.unshift(table('运行结果', ['结果'], [[outcome(algorithm, step.result)]]));
+      const views = criticalPathTables(input, step.variables);
+      if (step.done) views.unshift(table('运行结果', ['结果'], [[outcome(step.result)]]));
       element.replaceChildren(...views);
     },
   };

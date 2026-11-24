@@ -1,4 +1,5 @@
 import { graphLayer, gridLayer } from '../../../vendor/plus/vendor/engine/model.js';
+import { createKmpAnimation } from './f-kmp-animation.js';
 import { createBracketAnimation, createExpressionEvaluationAnimation, createInfixToPostfixAnimation } from './f-sequence-animation.js';
 import { createCriticalPathStateTable } from './f-state-table.js';
 import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer } from './trace-animation.js';
@@ -64,21 +65,8 @@ function stringAlignment(step, patternLength) {
   return { offset, matched, focus };
 }
 
-function kmpTable(pattern, step) {
-  const { mode, prefix, next, nextval, k, j, jump } = step.variables;
-  const cells = row => Number.isInteger(row) && row >= 0 && row < pattern.length
-    ? [0, 1, 2, 3].map(col => row + ',' + col) : [];
-  return gridLayer({
-    id: 'f-kmp-table', title: '预处理表 · 当前使用 ' + mode,
-    values: pattern.map((char, index) => [char, prefix[index] ?? '—', next[index] ?? '—', nextval[index] ?? '—']),
-    colLabels: ['字符', '前缀长度', 'next', 'nextval'],
-    roles: { swap: cells(k ?? j), focus2: cells(jump) },
-    props: { canvasWidth: 320, canvasHeight: Math.max(146, 72 + (pattern.length + 1) * 24), cellW: 50, cellH: 24 },
-  });
-}
-
 function stringMatchFrame(text, pattern, step) {
-  const { matches, i, j, k, jump, equal, mode } = step.variables;
+  const { matches, i, j, k, jump, equal } = step.variables;
   const { offset, matched } = stringAlignment(step, pattern.length);
   const length = Math.max(text.length, offset + pattern.length);
   const values = [];
@@ -114,7 +102,7 @@ function stringMatchFrame(text, pattern, step) {
   const found = matches.length ? indexedCard('f-matches', title, matches, {
     added: step.event === 'match' || step.event === 'empty' ? [matches.length - 1] : [],
   }) : sequenceLayer('f-matches', title, []);
-  return mode && pattern.length ? [aligned, kmpTable(pattern, step), found] : [aligned, found];
+  return [aligned, found];
 }
 
 // Derive display columns from the visible dependencies; event order and results come from the run.
@@ -247,27 +235,25 @@ export function createFAnimation(host, explainHost, run, config) {
   const input = run.input;
   const text = Array.from(input.text ?? '', showChar);
   const pattern = Array.from(input.pattern ?? '', showChar);
+  if (run.algorithm === 'kmp') return createKmpAnimation(host, explainHost, run, config, text, pattern);
   if (run.algorithm === 'bracket-matching') return createBracketAnimation(host, explainHost, run, config, text);
   if (run.algorithm === 'infix-to-postfix') return createInfixToPostfixAnimation(host, explainHost, run, config);
   if (run.algorithm === 'expression-evaluation') return createExpressionEvaluationAnimation(host, explainHost, run, config);
   const stringMatch = step => stringMatchFrame(text, pattern, step);
   const frames = {
     'naive-string-match': stringMatch,
-    kmp: stringMatch,
     'expression-dag': step => expressionDagFrame(step, run.steps[step.stepIndex - 1]),
     'critical-path': run.algorithm === 'critical-path' ? criticalPathFrames(run) : null,
   };
   const followMatch = step => {
-    const { k, j, matches, mode } = step.variables;
+    const { matches } = step.variables;
     const { focus } = stringAlignment(step, pattern.length);
     revealCell(host, 'f-match', matchCell(focus, focus < MATCH_COLUMNS ? 1 : 0));
     revealCell(host, 'f-match', matchCell(focus, 3));
-    if (mode) revealCell(host, 'f-kmp-table', (k ?? j ?? 0) + ',0');
     revealCell(host, 'f-matches', matches.length - 1);
   };
   const follow = {
     'naive-string-match': followMatch,
-    kmp: followMatch,
     'expression-dag': step => {
       const { operators, output } = step.variables;
       revealCell(host, 'f-operators', operators.length - 1);

@@ -49,7 +49,8 @@ async function startStringMatch(page, algorithm, text, pattern) {
 
 async function assertAnimation(page, run, step) {
   const stage = page.locator('[data-viz-engine="plus-f"] .avc-svg');
-  assert.ok(await stage.count(), step.algorithm);
+  if (step.algorithm === 'kmp') assert.ok(await page.locator('.f-kmp-animation').isVisible());
+  else assert.ok(await stage.count(), step.algorithm);
   assert.doesNotMatch((await stage.allTextContents()).join(' '), /渲染失败|undefined|NaN/);
   const v = step.variables;
   if (step.algorithm === 'bracket-matching') {
@@ -78,13 +79,13 @@ async function assertAnimation(page, run, step) {
       assert.equal(await layer(page, 'operands').locator('[data-avc-key="g-0"] rect').getAttribute('stroke'), '#0a6b4a');
     }
   }
-  if (step.algorithm === 'naive-string-match' || step.algorithm === 'kmp') {
+  if (step.algorithm === 'naive-string-match') {
     assert.ok(await layer(page, 'match').count());
     assert.deepEqual(await cells(page, 'matches'), v.matches.map(display));
-    if (v.mode) {
-      const expected = Array.from(run.input.pattern, (_, index) => [v.prefix[index], v.next[index], v.nextval[index]].map(display)).flat();
-      assert.deepEqual((await cells(page, 'kmp-table')).filter((_, index) => index % 4 !== 0), expected);
-    }
+  }
+  if (step.algorithm === 'kmp') {
+    assert.deepEqual(await cells(page, 'kmp-next'), Array.from(run.input.pattern, (_, index) => display(v[v.mode][index])));
+    assert.equal(await page.locator('.f-kmp-matches').getAttribute('data-positions'), v.matches.join(','));
   }
   if (step.algorithm === 'expression-dag' && v.nodes.length) {
     const graph = layer(page, 'expression-dag');
@@ -200,7 +201,7 @@ try {
       assert.deepEqual(await indices(page, 'infix'), ['0', '2', '3', '4', '5', '6', '7', '8', '9']);
       assert.deepEqual(await cells(page, 'postfix'), result);
     }
-    if (id === 'naive-string-match' || id === 'kmp') {
+    if (id === 'naive-string-match') {
       assert.deepEqual(await cells(page, 'matches'), result.map(String));
     }
     await page.click('#prevBtn');
@@ -395,41 +396,60 @@ try {
   }
 
   await selectWorkbenchAlgorithm(page, 'kmp');
-  const preprocessing = layer(page, 'kmp-table');
+  const preprocessing = layer(page, 'kmp-next');
+  const movingPattern = page.locator('.f-kmp-pattern');
+  const connector = page.locator('.f-kmp-connector');
+  assert.deepEqual(await page.locator('#f-mode option').allTextContents(), ['改进前 · next', '改进后 · nextval']);
   for (const [mode, jump] of [['next', 1], ['nextval', -1]]) {
     if (mode === 'nextval') await page.click('#c-edit');
     await page.selectOption('#f-mode', mode);
     const run = await startStringMatch(page, 'kmp', 'aab', 'aaa');
     const fallback = run.steps.findIndex(step => step.event === 'fallback');
-    for (let index = 0; index < fallback; index++) await ruler.press('ArrowRight');
+    for (let index = 0; index < fallback - 1; index++) await ruler.press('ArrowRight');
+    if (mode === 'next') {
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      assert.ok(await ruler.evaluate(control => {
+        const pattern = document.querySelector('.f-kmp-pattern');
+        pattern.getBoundingClientRect();
+        control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        return pattern.getAnimations().some(animation => animation.transitionProperty === 'transform');
+      }), 'pattern slides during fallback');
+      await movingPattern.evaluate(node => Promise.allSettled(node.getAnimations().map(animation => animation.finished)));
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+    } else await ruler.press('ArrowRight');
     await assertStep(page, run, fallback);
     assert.deepEqual(run.result, []);
     assert.equal(run.steps[fallback].variables.jump, jump);
-    assert.match(await preprocessing.getAttribute('aria-label'), new RegExp('当前使用 ' + mode + '$'));
-    assert.deepEqual(await cells(page, 'kmp-table'), ['a', '0', '-1', '-1', 'a', '1', '0', '-1', 'a', '2', '1', '-1']);
-    assert.equal(await preprocessing.locator('[data-avc-key="g-2,0"] rect').getAttribute('stroke-width'), '2');
+    assert.equal(await preprocessing.getAttribute('aria-label'), mode === 'next' ? '改进前 · next 数组' : '改进后 · nextval 数组');
+    assert.deepEqual(await cells(page, 'kmp-next'), mode === 'next' ? ['-1', '0', '1'] : ['-1', '-1', '-1']);
+    assert.equal(await movingPattern.getAttribute('data-offset'), String(2 - jump));
+    assert.equal(await preprocessing.locator('[data-avc-key="g-2"] rect').getAttribute('stroke-width'), '2');
     if (jump >= 0) {
-      const destination = preprocessing.locator('[data-avc-key="g-1,0"] rect');
+      const destination = preprocessing.locator('[data-avc-key="g-1"] rect');
       assert.equal(await destination.getAttribute('stroke-width'), '2');
-      await ruler.press('ArrowLeft');
-      await assertStep(page, run, fallback - 1);
-      assert.equal(await destination.getAttribute('stroke-width'), '1');
-    }
+      assert.ok(await connector.isVisible());
+      const main = await layer(page, 'kmp-text').locator('[data-avc-key="g-2"] rect').boundingBox();
+      const pattern = await layer(page, 'kmp-pattern').locator('[data-avc-key="g-1"] rect').boundingBox();
+      assert.ok(Math.abs(main.x - pattern.x) <= 1);
+    } else assert.ok(await connector.isHidden());
+    await ruler.press('ArrowLeft');
+    await assertStep(page, run, fallback - 1);
+    assert.equal(await movingPattern.getAttribute('data-offset'), '0');
   }
   await page.click('#c-edit');
   const longKmp = await startStringMatch(page, 'kmp', longText, longPattern);
   assert.deepEqual(longKmp.result, longMatch.result);
   await assertStep(page, longKmp, 0);
-  assert.equal(await preprocessing.locator('[data-avc-key="gv-47,3"]').textContent(), '—');
+  assert.equal(await preprocessing.locator('[data-avc-key="gv-47"]').textContent(), '—');
   await ruler.press('End');
   await assertStep(page, longKmp, longKmp.steps.length - 1);
-  assert.equal(await preprocessing.locator('[data-avc-key="gv-47,1"]').textContent(), '47');
+  assert.match(await preprocessing.locator('[data-avc-key="g-47"] title').textContent(), /前缀长度 47/);
   await ruler.press('ArrowLeft');
   await assertStep(page, longKmp, longKmp.steps.length - 2);
-  assert.ok(await preprocessing.evaluate(svg => svg.parentElement.scrollTop > 0));
+  assert.ok(await preprocessing.evaluate(svg => svg.closest('.f-kmp-track').scrollLeft > 0));
   await ruler.press('ArrowLeft');
   await assertStep(page, longKmp, longKmp.steps.length - 3);
-  assert.equal(await layer(page, 'matches').locator('[data-avc-key="gv-70"]').count(), 0);
+  assert.equal(await page.locator('.f-kmp-matches').getAttribute('data-positions'), longKmp.result.slice(0, -1).join(','));
   await page.click('#c-edit');
   const emptyKmp = await startStringMatch(page, 'kmp', 'a', '');
   await ruler.press('End');

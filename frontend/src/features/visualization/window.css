@@ -99,6 +99,29 @@
 .vizwin .legend-related { background: #fdeff8; color: #8b1570; }
 .trace-animation-stage .canvas-card header span { display: none; }
 .vizwin:has(.f-sequence-animation) .viewport-scene { width: 100%; }
+.vizwin:has(.f-kmp-animation) .viewport-scene { width: 100%; }
+.f-kmp-animation { --f-kmp-label-width: 126px; padding: 30px 14px 8px; }
+.f-kmp-alignment, .f-kmp-next { display: grid; grid-template-columns: var(--f-kmp-label-width) minmax(0, 1fr); align-items: center; }
+.f-kmp-label { font-weight: 650; }
+.f-kmp-row-labels { display: grid; grid-template-rows: 88px 124px; align-items: center; align-self: start; }
+.f-kmp-row-labels > :last-child { align-self: end; margin-bottom: 36px; }
+.f-kmp-track { min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.f-kmp-track:focus-visible { outline: 2px solid var(--bl-accent); outline-offset: -2px; }
+.f-kmp-strip { position: relative; height: 212px; }
+.f-kmp-tiles { height: 88px; }
+.f-kmp-pattern { position: absolute; top: 124px; left: 0; }
+.f-kmp-tiles rect:has(> title) { pointer-events: auto; }
+.f-kmp-connector { position: absolute; top: 79px; height: 55px; width: 2px; background: var(--bl-accent); color: var(--bl-accent); transform: translateX(-50%); }
+.f-kmp-connector::before, .f-kmp-connector::after { position: absolute; left: -3px; width: 6px; height: 6px; content: ''; border-right: 2px solid; border-bottom: 2px solid; }
+.f-kmp-connector::before { top: 0; transform: rotate(225deg); }
+.f-kmp-connector::after { bottom: 0; transform: rotate(45deg); }
+.f-kmp-connector.is-mismatch { color: #a45b12; background: currentColor; }
+.f-kmp-matches { margin: 10px 0 12px var(--f-kmp-label-width); overflow-x: auto; color: var(--bl-text-dim); white-space: nowrap; }
+.f-kmp-next { padding-top: 10px; border-top: 1px solid var(--bl-line); }
+.f-kmp-next > .f-kmp-label { padding-right: 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .f-kmp-pattern.is-sliding { transition: transform 240ms ease-out; }
+}
 .f-sequence-animation { --f-sequence-row-height: 112px; display: grid; gap: 14px; }
 .f-sequence-animation:has(> :nth-child(3)) { --f-sequence-row-height: 96px; }
 .f-sequence-row { min-width: 0; border: 1px solid var(--bl-line); border-radius: 8px; }

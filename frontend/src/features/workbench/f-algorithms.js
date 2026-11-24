@@ -15,7 +15,7 @@ const configs = {
     help: '主串最多 120 个字符，模式串最多 48 个字符。下标从 0 开始，空模式返回 0。',
     fields: matchFields },
   kmp: { chapter: 4, title: 'KMP 模式匹配', field: 'text', label: '主串', example: 'abababaca',
-    secondary: { label: '模式串', example: 'ababaca' }, modes: [['next', 'next'], ['nextval', 'nextval']],
+    secondary: { label: '模式串', example: 'ababaca' }, modes: [['next', '改进前 · next'], ['nextval', '改进后 · nextval']],
     help: '主串最多 120 个字符，模式串最多 48 个字符。结束一次匹配后保留可重叠前缀，空模式返回 0。',
     fields: [['i', '主串下标'], ['j', '模式串下标'], ['jump', '回退到'], ['matches', '匹配位置']] },
   'expression-dag': { chapter: 6, title: '表达式有向无环图', field: 'expression', label: '中缀表达式', example: '(2+3)*(2+3)',

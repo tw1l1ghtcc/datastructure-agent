@@ -1,55 +1,12 @@
 import { graphLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createStringMatchAnimation } from './f-string-match-animation.js';
 import { createBracketAnimation, createExpressionEvaluationAnimation, createInfixToPostfixAnimation } from './f-sequence-animation.js';
-import { createCriticalPathStateTable } from './f-state-table.js';
-import { compactLabel, createTraceAnimation, indexedCard, sequenceLayer } from './trace-animation.js';
+import { createCriticalPathState, createExpressionDagState } from './f-state-table.js';
+import { compactLabel, createTraceAnimation } from './trace-animation.js';
 
-const WINDOW_SIZE = 10;
 const charLabels = { ' ': '空格', '\t': '制表符', '\n': '换行', '\r': '回车' };
 const showChar = char => charLabels[char] ?? char;
 const nodeId = index => 'f' + index;
-
-function tail(id, title, values, markTop = false) {
-  return sequenceLayer(id, title, values, { focus2: markTop ? [values.length - 1] : [] },
-    { first: Math.max(0, values.length - WINDOW_SIZE) });
-}
-
-function revealCell(host, layer, key) {
-  const svg = host.querySelector('[data-avc-svg="' + layer + '"]');
-  const viewport = svg?.parentElement;
-  if (!viewport) return;
-  if (viewport.scrollHeight > viewport.clientHeight) {
-    viewport.tabIndex = 0;
-    viewport.setAttribute('role', 'region');
-    viewport.setAttribute('aria-label', svg.getAttribute('aria-label'));
-  } else {
-    viewport.removeAttribute('tabindex');
-    viewport.removeAttribute('role');
-    viewport.removeAttribute('aria-label');
-  }
-  const cell = svg.querySelector('[data-avc-key="g-' + key + '"] rect');
-  if (!cell) return;
-  const bounds = cell.getBoundingClientRect();
-  const view = viewport.getBoundingClientRect();
-  if (bounds.top < view.top + 4) viewport.scrollTop += bounds.top - view.top - 4;
-  else if (bounds.bottom > view.bottom - 4) viewport.scrollTop += bounds.bottom - view.bottom + 4;
-}
-
-function tokenCard(id, title, tokens, roles) {
-  return tokens.length
-    ? indexedCard(id, title, tokens.map(token => token.text), roles, tokens.map(token => token.index))
-    : sequenceLayer(id, title, []);
-}
-
-function dagConversionLayers(step, previous) {
-  const { operators, output, nodes } = step.variables;
-  const appended = output.length > (previous?.variables.output.length ?? 0);
-  const title = step.result?.error && !nodes.length ? '已输出词元 · ' + step.result.error : '后缀序列（格下为原下标）';
-  return [
-    tokenCard('f-operators', '运算符栈（底到顶，格下为原下标）', operators, { focus2: [operators.length - 1] }),
-    tokenCard('f-postfix', title, output, { added: appended ? [output.length - 1] : [] }),
-  ];
-}
 
 // Derive display columns from the visible dependencies; event order and results come from the run.
 function placeGraph(nodes, edges, columnWidth = 126) {
@@ -108,37 +65,54 @@ function routeEdges(edges) {
   return edges;
 }
 
-function graphCard(id, title, layout, edges, roles) {
+function graphScene(id, title, layout, edges, roles) {
   return graphLayer({
     id, title, nodes: layout.nodes, edges, directed: true, roles,
-    props: { canvasWidth: layout.canvasWidth, canvasHeight: layout.canvasHeight, routedEdges: true, showLegend: false },
+    props: { canvasWidth: layout.canvasWidth, canvasHeight: layout.canvasHeight, routedEdges: true, showLegend: false,
+      nodeRadius: 24, nodeLabelSize: 13, nodeDetailSize: 11, nodeDetailOffset: 24 },
   });
 }
 
-function expressionDagFrame(step, previous) {
-  const v = step.variables;
-  const layers = dagConversionLayers(step, previous);
-  if (!v.nodes.length) return layers;
-  const nodes = v.nodes.map(node => {
+function dagNodes(v) {
+  return v.nodes.map(node => {
     const label = compactLabel(node.token, 5);
     const number = '#' + node.id;
     const sub = Object.hasOwn(v.cache, node.id) ? number + ' = ' + v.cache[node.id]
       : label !== node.token ? number + ' · ' + node.token : number;
-    return { id: nodeId(node.id), label, sub, badge: v.root === node.id ? '根' : undefined };
+    return { id: nodeId(node.id), label, sub, fullLabel: node.token + ' · ' + sub, badge: v.root === node.id ? '根' : undefined };
   });
-  const error = step.result?.error;
-  const current = error ? v.nodes.find(node => node.index === v.index)?.id : v.currentNode;
-  const edges = routeEdges(v.edges.map(([from, to, role]) => ({
+}
+
+function dagEdges(records, current) {
+  return routeEdges(records.map(([from, to, role]) => ({
     from: nodeId(from), to: nodeId(to), w: role === '左操作数' ? '左' : '右',
     state: to === current ? 'active' : 'idle',
   })));
-  const title = error ? '表达式依赖图 · ' + error : '表达式依赖图（箭头指向使用节点）';
-  const columnWidth = Math.max(126, ...nodes.map(node => node.sub.length * 6 + 20));
-  const graph = graphCard('f-expression-dag', title, placeGraph(nodes, edges, columnWidth), edges, {
-    swap: current == null ? [] : [nodeId(current)], done: v.order.map(nodeId),
-  });
-  const stack = indexedCard('f-build-stack', '构图栈（底到顶）', v.stack, { focus2: [v.stack.length - 1] });
-  return [graph, stack, ...layers];
+}
+
+function dagCurrent(step) {
+  const v = step.variables;
+  return step.result?.error ? v.nodes.find(node => node.index === v.index)?.id : v.currentNode;
+}
+
+function expressionDagFrames(run) {
+  const final = run.steps.at(-1).variables;
+  const nodes = dagNodes(final);
+  const columnWidth = Math.max(138, ...nodes.map(node => node.sub.length * 7 + 20));
+  // Reserve positions using the completed dependency graph. Each frame only draws its own nodes and edges.
+  const layout = placeGraph(nodes, dagEdges(final.edges), columnWidth);
+  const positions = new Map(layout.nodes.map(({ id, x, y }) => [id, { x, y }]));
+  return step => {
+    const v = step.variables;
+    const current = dagCurrent(step);
+    const error = step.result?.error;
+    const title = error ? '表达式依赖图 · ' + error : '表达式依赖图（箭头指向使用节点）';
+    const visible = dagNodes(v).map(node => ({ ...node, ...positions.get(node.id) }));
+    const scene = visible.length ? { ...layout, nodes: visible } : { nodes: [], canvasWidth: 320, canvasHeight: 234 };
+    return [graphScene('f-expression-dag', title, scene, dagEdges(v.edges, current), {
+      swap: current == null ? [] : [nodeId(current)], done: v.order.map(nodeId),
+    })];
+  };
 }
 
 function eventTimes(variables, event) {
@@ -153,7 +127,7 @@ function criticalPathFrames({ input, steps }) {
   let columnWidth = 126;
   for (const step of steps) {
     for (const event of input.nodes) {
-      columnWidth = Math.max(columnWidth, eventTimes(step.variables, event).length * 6 + 20);
+      columnWidth = Math.max(columnWidth, eventTimes(step.variables, event).length * 7 + 20);
     }
   }
   const layout = placeGraph(nodes, edges, columnWidth);
@@ -168,13 +142,24 @@ function criticalPathFrames({ input, steps }) {
       ...edge, state: index === v.activityIndex ? 'active' : critical.has(index) ? 'tree' : 'idle',
     }));
     return [
-      graphCard('f-activities', '活动网络（红色为当前活动，绿色为关键活动）', { ...layout, nodes: timed }, activities, {
+      graphScene('f-activities', '活动网络（红色为当前活动，绿色为关键活动）', { ...layout, nodes: timed }, activities, {
         swap: [ids.get(v.currentNode)].filter(Boolean), done: v.order.map(event => ids.get(event)),
       }),
-      sequenceLayer('f-queue', '拓扑队列（队首在左）', v.queue),
-      tail('f-order', '拓扑序', v.order),
     ];
   };
+}
+
+function revealGraphNode(viewport, id) {
+  const circle = viewport.querySelector(`[data-avc-key="n-${nodeId(id)}"] circle`);
+  if (!circle) return;
+  const node = circle.getBoundingClientRect();
+  const frame = viewport.getBoundingClientRect();
+  if (node.left < frame.left || node.right > frame.left + viewport.clientWidth) {
+    viewport.scrollLeft += (node.left + node.right - viewport.clientWidth) / 2 - frame.left;
+  }
+  if (node.top < frame.top || node.bottom > frame.top + viewport.clientHeight) {
+    viewport.scrollTop += (node.top + node.bottom - viewport.clientHeight) / 2 - frame.top;
+  }
 }
 
 export function createFAnimation(host, explainHost, run, config) {
@@ -188,30 +173,19 @@ export function createFAnimation(host, explainHost, run, config) {
   if (run.algorithm === 'infix-to-postfix') return createInfixToPostfixAnimation(host, explainHost, run, config);
   if (run.algorithm === 'expression-evaluation') return createExpressionEvaluationAnimation(host, explainHost, run, config);
   const dag = run.algorithm === 'expression-dag';
-  const stateTable = dag ? null : createCriticalPathStateTable(input);
-  const frameFor = dag
-    ? step => expressionDagFrame(step, run.steps[step.stepIndex - 1])
-    : criticalPathFrames(run);
-  const animation = createTraceAnimation(host, explainHost, stateTable, frameFor, 'f', { run, config });
-  if (!dag) return animation;
-
-  function follow(step) {
-    const { operators, output, stack } = step.variables;
-    revealCell(host, 'f-operators', operators.length - 1);
-    revealCell(host, 'f-postfix', output.length - 1);
-    revealCell(host, 'f-build-stack', stack.length - 1);
-  }
-  host.querySelector('[data-viz-engine="plus-f"] .trace-animation-stage').classList.add('f-scroll-cards');
+  const state = dag ? createExpressionDagState(run) : createCriticalPathState(input);
+  const frameFor = dag ? expressionDagFrames(run) : criticalPathFrames(run);
+  const animation = createTraceAnimation(host, explainHost, state, frameFor, 'f', { run, config, fillViewport: true });
+  const viewport = host.querySelector('.trace-animation-viewport');
+  const eventIndices = dag ? null : new Map(input.nodes.map((id, index) => [id, index]));
   return {
     ...animation,
     showStep(step) {
       animation.showStep(step);
-      follow(step);
-    },
-    playEnterAnimation() {
-      animation.playEnterAnimation();
-      const step = animation.getStep();
-      if (step) follow(step);
+      if (!step.stepIndex) viewport.scrollTo(0, 0);
+      const v = step.variables;
+      const target = dag ? dagCurrent(step) ?? v.root : eventIndices.get(v.currentNode ?? v.currentEdge?.[step.event === 'latest' ? 0 : 1]);
+      if (target != null) revealGraphNode(viewport, target);
     },
   };
 }

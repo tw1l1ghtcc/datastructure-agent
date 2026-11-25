@@ -53,6 +53,42 @@ try {
     assert.equal(await page.locator('#c-fields').isHidden(),true);
     await page.click('#nextBtn');
     assert.equal(await page.locator('#code-lines .active').count(),1);
+    if (algorithm === 'optimal-merge-tree') {
+      const [left, right] = await Promise.all(['.c-optimal-sidebar', '.c-optimal-tree-pane'].map(selector =>
+        animated.locator(selector).boundingBox()));
+      assert.ok(left.x + left.width < right.x && left.y === right.y && right.width > 2 * left.width);
+      const picked = animated.locator('[data-layer="c-selected"]');
+      assert.deepEqual(await picked.locator('[data-avc-key^="gv-"]').allTextContents(), ['2', '3']);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      assert.ok(await page.locator('[data-tl-ruler]').evaluate(control => {
+        control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        const tile = document.querySelector('.array-animation-moving-value');
+        return tile?.textContent === '5' && tile.getAnimations().length > 0;
+      }));
+      assert.match(await page.locator('[data-explain-host] .bsviz-status').textContent(), /2 \+ 3 = 5.*0 \+ 5 = 5/);
+      assert.equal(await animated.locator('.c-optimal-cost').textContent(), '累计代价 5');
+    }
+    if (algorithm === 'replacement-selection') {
+      const values = id => animated.locator(`[data-layer="${id}"] [data-avc-key^="gv-"]`).allTextContents();
+      assert.deepEqual(await values('c-replacement-input'), ['4', '5', '1', '2', '6']);
+      assert.deepEqual(await values('c-active'), ['4', '5']);
+      const [active, frozen] = await Promise.all(['c-active', 'c-frozen'].map(id =>
+        animated.getByRole('region', { name: id === 'c-active' ? '活动区' : '冻结区' }).boundingBox()));
+      assert.ok(active.width > 0 && frozen.x > active.x && frozen.y === active.y);
+      await page.click('#nextBtn');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      const ruler = page.locator('[data-tl-ruler]');
+      assert.ok(await ruler.evaluate(control => {
+        control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        const tile = document.querySelector('.array-animation-moving-value');
+        return tile?.textContent === '1' && tile.getAnimations().length > 0;
+      }));
+      assert.deepEqual(await values('c-frozen'), ['1']);
+      assert.match(await page.locator('[data-explain-host] .bsviz-status').textContent(), /读入 A\[2\] = 1.*本段末值 4/);
+      await ruler.press('ArrowLeft');
+      assert.deepEqual(await values('c-frozen'), []);
+      assert.equal(await animated.locator('.array-animation-moving-value').count(), 0);
+    }
     await page.click('[data-t="last"]');
     assert.match(await page.locator('[data-explain-host]').innerText(),/运行结束/);
     const last = run.steps.at(-1);
@@ -68,9 +104,9 @@ try {
         run.result.map(String));
     }
     const tables = animated.locator('.c-state-tables');
-    if (algorithm === 'optimal-merge-tree') {
+    if (!tree) {
       assert.equal(await tables.count(), 0);
-      assert.match(await page.locator('[data-explain-host]').innerText(), /总代价 17/);
+      if (algorithm === 'optimal-merge-tree') assert.match(await page.locator('[data-explain-host]').innerText(), /总代价 17/);
     } else {
       const tableText = await tables.innerText();
       assert.doesNotMatch(tableText, /undefined|NaN/);
@@ -148,9 +184,9 @@ try {
   const weights = Array.from({ length: 64 }, (_, index) => index % 3 === 0 ? 0 : 1);
   weights[0] = Number.MAX_SAFE_INTEGER - 10000;
   const optimal = await startOptimal(weights);
-  const candidates = page.locator('[data-layer="c-candidates"] svg');
-  const forest = page.locator('[data-layer="c-merge-tree"] svg');
-  const queueViewport = page.locator('[data-layer="c-candidates"] .avc-svg-wrap');
+  const candidates = page.locator('svg[data-layer="c-candidates"]');
+  const forest = page.locator('svg[data-layer="c-merge-tree"]');
+  const queueViewport = page.locator('.c-optimal-queue');
   const assertCandidates = async index => {
     const { nodes, candidates: ids } = optimal.steps[index].variables;
     assert.deepEqual(await candidates.locator('[data-avc-key^="idx-"]').allTextContents(), ids.map(id => '#' + id));
@@ -172,6 +208,9 @@ try {
   }
   await page.click('#nextBtn');
   await assertCandidates(2);
+  const parentPosition = optimal.steps[2].variables.candidates.indexOf(64);
+  assert.equal(await candidates.locator(`[data-avc-key="g-${parentPosition}"] rect`).getAttribute('stroke-width'), '2');
+  assert.equal(await forest.locator('[data-avc-key="n-64"] rect').getAttribute('stroke-width'), '2');
   for (const [child, tag] of [[3, 'L'], [6, 'R']]) {
     assert.equal(await forest.locator('[data-avc-key="e-64-' + child + '"]').count(), 1);
     assert.equal(await forest.locator('[data-avc-key="et-' + child + '"]').textContent(), tag);
@@ -182,6 +221,14 @@ try {
   await page.locator('[data-tl-ruler]').press('End');
   await assertCandidates(optimal.steps.length - 1);
   assert.equal(await forest.locator('[data-avc-key^="n-"]').count(), 127);
+  const root = optimal.result.root;
+  assert.ok(await forest.locator(`[data-avc-key="n-${root}"] rect`).evaluate(rect => {
+    const viewport = rect.closest('.c-optimal-tree-viewport');
+    const bounds = viewport.getBoundingClientRect();
+    const cell = rect.getBoundingClientRect();
+    return viewport.scrollWidth > viewport.clientWidth && cell.left >= bounds.left - 1 &&
+      cell.right <= bounds.left + viewport.clientWidth + 1 && cell.top >= bounds.top - 1;
+  }));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 
   for (const input of [[], [7]]) {
@@ -196,6 +243,7 @@ try {
   await selectWorkbenchAlgorithm(page, 'multiway-merge');
   const mergeRuns = Array.from({ length: 4 }, (_, run) =>
     Array.from({ length: 32 }, (_, index) => index * 2 + run % 2 - 32));
+  mergeRuns[1][0] = mergeRuns[0][0];
   mergeRuns[3][31] = Number.MAX_SAFE_INTEGER;
   await page.fill('#c-data', mergeRuns.map(run => run.join(',')).join('\n'));
   await page.fill('#c-param', '2');
@@ -206,44 +254,88 @@ try {
   const merge = await mergeResponse.json();
   await page.locator('#c-edit').waitFor();
   const timeline = page.locator('[data-tl-ruler]');
-  const output = page.locator('[data-layer="c-output"] svg');
+  const output = page.locator('svg[data-layer="c-output"]');
   const outputValues = output.locator('[data-avc-key^="gv-"]');
-  const mergeTables = page.locator('[data-viz-engine="plus-c"] .c-state-tables');
-  const batchTable = mergeTables.locator('table').filter({ has: page.locator('caption', { hasText: /^本批归并$/ }) });
+  const input = run => page.locator('svg[data-layer="c-input-' + run + '"]');
+  const countInputs = page.locator('.c-merge-inputs .array-animation-row');
+  const outputViewport = page.locator('.c-merge-output .array-animation-track');
   const assertMergeStep = async index => {
     const step = merge.steps[index];
     assert.equal(await timeline.getAttribute('aria-valuenow'), String(index + 1));
     assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'), step.lineId);
     assert.deepEqual(await outputValues.allTextContents(), step.variables.output.map(String));
   };
+  assert.equal(await countInputs.count(), 4);
+  assert.deepEqual(await input(0).locator('[data-avc-key^="gv-"]').allTextContents(), mergeRuns[0].map(String));
+  await timeline.press('ArrowRight');
+  await timeline.press('ArrowRight');
+  await assertMergeStep(2);
+  assert.equal(merge.steps[2].variables.selected.run, 0);
+  assert.equal(await input(0).locator('[data-avc-key="g-0"] rect').getAttribute('fill'), '#fdf1e0');
+  assert.match(await page.locator('[data-explain-host] .bsviz-status').textContent(), /候选值相同时/);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  assert.ok(await timeline.evaluate(ruler => {
+    ruler.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    return document.querySelector('.array-animation-moving-value')?.getAnimations().length > 0;
+  }));
+  await assertMergeStep(3);
+  assert.equal(await input(0).locator('[data-avc-key="g-1"] rect').getAttribute('stroke-width'), '2');
+  assert.match(await page.locator('[data-explain-host] .bsviz-status').textContent(), /来源游标 移到下标 1/);
+  await timeline.press('ArrowLeft');
+  await assertMergeStep(2);
+  assert.equal(await page.locator('.array-animation-moving-value').count(), 0);
+  assert.equal(await input(0).locator('[data-avc-key="g-1"] rect').getAttribute('stroke-width'), '1');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+
+  const firstGenerated = merge.steps.findIndex(step => step.event === 'select' && step.variables.producedRuns.length > 0);
+  await timeline.press('Home');
+  for (let index = 0; index < firstGenerated; index++) await timeline.press('ArrowRight');
+  await assertMergeStep(firstGenerated);
+  assert.deepEqual(await page.locator('[data-layer="c-generated-0"] [data-avc-key^="gv-"]').allTextContents(),
+    merge.steps[firstGenerated].variables.producedRuns[0].map(String));
+
   await timeline.press('End');
   assert.deepEqual(merge.result, mergeRuns.flat().sort((a, b) => a - b));
   assert.equal(merge.result.length, 128);
   assert.equal(merge.steps.at(-1).variables.pass, 2);
   await assertMergeStep(merge.steps.length - 1);
-  const outputViewport = page.locator('[data-layer="c-output"] .avc-svg-wrap');
   assert.equal(await outputViewport.getAttribute('tabindex'), '0');
-  assert.ok(await outputViewport.evaluate(element => element.scrollTop > 0));
+  assert.ok(await outputViewport.evaluate(element => element.scrollLeft > 0));
   await timeline.press('ArrowLeft');
   await assertMergeStep(merge.steps.length - 2);
-  assert.equal(await outputViewport.getAttribute('tabindex'), null);
+  assert.equal(await output.count(), 0);
   await timeline.press('ArrowLeft');
   await assertMergeStep(merge.steps.length - 3);
-  assert.deepEqual(await batchTable.locator('tbody td:first-child').allTextContents(), ['各段读取位置', '本趟已生成段']);
-  assert.equal(await mergeTables.locator('caption', { hasText: /^当前有序段$/ }).count(), 1);
+  assert.equal(await countInputs.count(), 2);
+  assert.equal(await page.locator('.c-multiway-merge table').count(), 0);
   await timeline.press('ArrowLeft');
   await assertMergeStep(merge.steps.length - 4);
   const lastWrite = output.locator('[data-avc-key="g-127"] rect');
   assert.equal(await lastWrite.getAttribute('stroke-width'), '2');
   assert.ok(await lastWrite.evaluate(rect => {
-    const viewport = rect.closest('.avc-svg-wrap').getBoundingClientRect();
+    const viewport = rect.closest('.array-animation-track').getBoundingClientRect();
     const cell = rect.getBoundingClientRect();
-    return cell.top >= viewport.top - 1 && cell.bottom <= viewport.bottom + 1;
+    return cell.left >= viewport.left - 1 && cell.right <= viewport.right + 1;
   }));
   await timeline.press('ArrowLeft');
   await assertMergeStep(merge.steps.length - 5);
   assert.equal(await lastWrite.count(), 0);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+  await page.click('#c-edit');
+  await page.fill('#c-data', Array.from({ length: 32 }, (_, index) => String(31 - index)).join('\n'));
+  await page.fill('#c-param', '32');
+  await page.click('#startBtn');
+  await page.locator('#c-edit').waitFor();
+  await timeline.press('ArrowRight');
+  await timeline.press('ArrowRight');
+  assert.equal(await countInputs.count(), 32);
+  assert.ok(await input(31).locator('[data-avc-key="g-0"] rect').evaluate(rect => {
+    const panel = rect.closest('.c-merge-inputs');
+    const bounds = panel.getBoundingClientRect();
+    const cell = rect.getBoundingClientRect();
+    return panel.scrollTop > 0 && cell.top >= bounds.top - 1 && cell.bottom <= bounds.bottom + 1;
+  }));
 
   await selectWorkbenchAlgorithm(page, 'replacement-selection');
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -258,8 +350,8 @@ try {
   assert.equal(replacementResponse.status(), 200);
   const replacement = await replacementResponse.json();
   await page.locator('#c-edit').waitFor();
-  const buffer = id => page.locator('[data-layer="' + id + '"] svg');
-  const completed = page.locator('.c-state-tables table').filter({ has: page.locator('caption', { hasText: /^已完成段$/ }) });
+  const buffer = id => page.locator('svg[data-layer="' + id + '"]');
+  const completed = page.locator('.c-replacement-completed .array-animation-row');
   const assertReplacementStep = async index => {
     const step = replacement.steps[index];
     assert.equal(await timeline.getAttribute('aria-valuenow'), String(index + 1));
@@ -269,9 +361,12 @@ try {
       assert.deepEqual(await buffer(id).locator('[data-avc-key^="idx-"]').allTextContents(), entries.map(entry => '#' + entry.index));
     }
     assert.deepEqual(await buffer('c-current-run').locator('[data-avc-key^="gv-"]').allTextContents(), step.variables.currentRun.map(String));
-    assert.deepEqual(await completed.locator('tbody td:nth-child(2)').allTextContents(),
-      step.variables.runs.map(run => run.join('、')));
-    assert.equal(await page.locator('.c-state-tables caption', { hasText: /^缓冲区$/ }).count(), 0);
+    assert.equal(await completed.count(), step.variables.runs.length);
+    for (const [index, segment] of step.variables.runs.entries()) {
+      assert.deepEqual(await buffer('c-replacement-result-' + index).locator('[data-avc-key^="gv-"]').allTextContents(),
+        segment.map(String));
+    }
+    assert.equal(await page.locator('.c-replacement-selection table').count(), 0);
   };
   await timeline.press('ArrowRight');
   await assertReplacementStep(1);
@@ -287,14 +382,14 @@ try {
   const frozenLast = buffer('c-frozen').locator('[data-avc-key="g-63"] rect');
   assert.equal(await frozenLast.getAttribute('stroke-width'), '2');
   assert.ok(await frozenLast.evaluate(rect => {
-    const container = rect.closest('.avc-svg-wrap');
+    const container = rect.closest('.array-animation-track');
     const view = container.getBoundingClientRect();
     const cell = rect.getBoundingClientRect();
-    return container.scrollTop > 0 && cell.top >= view.top - 1 && cell.bottom <= view.bottom + 1;
+    return container.scrollLeft > 0 && cell.left >= view.left - 1 && cell.right <= view.right + 1;
   }), 'the newly frozen element is in view');
   await timeline.press('ArrowRight');
   await assertReplacementStep(lastFreeze + 1);
-  assert.equal(await completed.locator('tbody tr').count(), 1);
+  assert.equal(await completed.count(), 1);
   await timeline.press('ArrowRight');
   await assertReplacementStep(lastFreeze + 2);
   assert.equal(await buffer('c-active').locator('[data-avc-key="idx-0"]').textContent(), '#127');

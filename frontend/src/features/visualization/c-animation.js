@@ -1,29 +1,15 @@
 import { createStage } from '../../../vendor/plus/app/svg-stage.js';
-import { arrayLayer, treeLayer } from '../../../vendor/plus/vendor/engine/model.js';
+import { treeLayer } from '../../../vendor/plus/vendor/engine/model.js';
+import { createMultiwayAnimation } from './c-multiway-animation.js';
+import { createOptimalMergeAnimation } from './c-optimal-merge-animation.js';
+import { createReplacementAnimation } from './c-replacement-animation.js';
 import { createCStateTable } from './c-state-table.js';
 import { createExplanationPanel } from './explanation-panel.js';
 import { describeStructuredStep } from './structured-explanation.js';
-import { indexedCard } from './trace-animation.js';
 
-const ARRAY_WINDOW = 16;
 const MIN_WIDTH = 320;
 
-function sequence(id, title, values, { focus = [], indexBase = 0 } = {}) {
-  const size = Math.min(values.length, ARRAY_WINDOW);
-  const anchor = focus[0] ?? 0;
-  const first = Math.max(0, Math.min(anchor - Math.floor(size / 2), values.length - size));
-  const base = first + indexBase;
-  const slice = values.slice(first, first + size);
-  return arrayLayer({
-    id, title: size < values.length ? title + ' · 下标 ' + base + '–' + (base + size - 1) : title,
-    values: slice,
-    labels: slice.map(value => value == null ? '空' : String(value)),
-    indexBase: base,
-    roles: { focus1: focus.map(index => index + indexBase) },
-  });
-}
-
-function tree(id, title, nodes, roots, roles, { extraEdges = [], edgeTags } = {}) {
+function tree(id, title, nodes, roots, roles, extraEdges) {
   const boxWidth = Math.max(32, ...nodes.map(node => node.boxWidth));
   const leafGap = boxWidth + 20;
   const byId = new Map(nodes.map(node => [node.id, node]));
@@ -38,7 +24,7 @@ function tree(id, title, nodes, roots, roles, { extraEdges = [], edgeTags } = {}
   return {
     width: Math.max(MIN_WIDTH, boxWidth + Math.max(0, leaves - 1) * leafGap + 44),
     layer: treeLayer({
-      id, title, nodes, roots, roles, extraEdges, edgeTags,
+      id, title, nodes, roots, roles, extraEdges,
       props: { leafGap, canvasHeight: 130 + maxDepth * 63 },
     }),
   };
@@ -46,58 +32,6 @@ function tree(id, title, nodes, roots, roles, { extraEdges = [], edgeTags } = {}
 
 function treeNode(id, label, children) {
   return { id, label, children, value: '#' + id, boxWidth: Math.max(34, label.length * 7 + 16) };
-}
-
-function optimalTree(step) {
-  const v = step.variables;
-  const children = new Set(v.nodes.flatMap(node => [node.left, node.right]));
-  const roots = v.nodes.filter(node => !children.has(node.id)).map(node => node.id);
-  const nodes = v.nodes.map(node => treeNode(node.id, String(node.weight),
-    [node.left, node.right].filter(child => child !== null)));
-  const edgeTags = Object.fromEntries(v.nodes.filter(node => node.left != null)
-    .flatMap(node => [[node.left, 'L'], [node.right, 'R']]));
-  const stage = tree('c-merge-tree', '归并节点森林（L 左，R 右）', nodes, roots, {
-    focus1: v.selected, focus2: v.parent == null ? [] : [v.parent],
-  }, { edgeTags });
-  const candidates = v.candidates.length
-    ? indexedCard('c-candidates', '候选段权重（按取出顺序，格下为节点 ID）',
-      v.candidates.map(id => v.nodes[id].weight), {}, v.candidates.map(id => '#' + id))
-    : sequence('c-candidates', '候选段为空', []);
-  return { width: stage.width, layers: [candidates, stage.layer] };
-}
-
-function outputCard(id, title, values, writing) {
-  return values.length
-    ? indexedCard(id, title, values, { added: writing ? [values.length - 1] : [] })
-    : sequence(id, title, []);
-}
-
-function multiway(step) {
-  const v = step.variables;
-  const heads = (v.group ?? v.runs).map((run, i) => run[v.positions[i] ?? 0] ?? null);
-  const groupStart = v.groupStart ?? 0;
-  const selected = step.event === 'select' ? [v.selected.run - groupStart] : [];
-  return { layers: [
-    sequence('c-run-heads', '各段下一待取值（按段号）', heads, { focus: selected, indexBase: groupStart }),
-    outputCard('c-output', step.done ? '归并结果' : '本批输出', v.output, step.event === 'output'),
-  ] };
-}
-
-function bufferCard(id, title, entries, incoming) {
-  if (!entries.length) return sequence(id, title, []);
-  const position = entries.findIndex(entry => entry.index === incoming?.index);
-  return indexedCard(id, title, entries.map(entry => entry.value),
-    { focus1: position < 0 ? [] : [position] }, entries.map(entry => '#' + entry.index));
-}
-
-function replacement(step) {
-  const { active, frozen, currentRun, incoming } = step.variables;
-  const layers = [
-    bufferCard('c-active', '活动区（格下为原下标）', active, incoming),
-    bufferCard('c-frozen', '冻结区（格下为原下标）', frozen, incoming),
-  ];
-  if (!step.done) layers.push(outputCard('c-current-run', '当前输出段', currentRun, step.event === 'output'));
-  return { layers };
 }
 
 function searchTree(step) {
@@ -109,30 +43,24 @@ function searchTree(step) {
   })) : [];
   const focused = [currentNode, overflowNode].filter(id => id != null);
   const partners = split ? [split.left, split.right] : [];
-  const stage = tree('c-search-tree', bPlus ? 'B+ 树与叶链（虚线）' : 'B 树结构',
+  return tree('c-search-tree', bPlus ? 'B+ 树与叶链（虚线）' : 'B 树结构',
     display, root == null ? [] : [root], {
       focus1: focused, focus2: partners, done: path,
-    }, { extraEdges: leafLinks });
-  return { width: stage.width, layers: [stage.layer] };
+    }, leafLinks);
 }
 
-const frameByAlgorithm = {
-  'optimal-merge-tree': optimalTree,
-  'multiway-merge': multiway,
-  'replacement-selection': replacement,
-  'b-tree': searchTree,
-  'b-plus-tree': searchTree,
-};
-
 export function createCAnimation(host, run, config, explainHost) {
+  if (run.algorithm === 'optimal-merge-tree') return createOptimalMergeAnimation(host, run, config, explainHost);
+  if (run.algorithm === 'multiway-merge') return createMultiwayAnimation(host, run, config, explainHost);
+  if (run.algorithm === 'replacement-selection') return createReplacementAnimation(host, run, config, explainHost);
   const element = document.createElement('div');
   element.className = 'c-animation';
   element.dataset.vizEngine = 'plus-c';
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz c-animation-stage';
   element.append(canvas);
-  const state = run.algorithm === 'optimal-merge-tree' ? null : createCStateTable(config);
-  if (state) element.append(state.element);
+  const state = createCStateTable(config);
+  element.append(state.element);
   host.append(element);
   const stage = createStage(canvas);
   const { explain, caption, status } = createExplanationPanel();
@@ -141,37 +69,13 @@ export function createCAnimation(host, run, config, explainHost) {
 
   function showStep(step) {
     current = step;
-    const frame = frameByAlgorithm[run.algorithm](step);
-    const minWidth = Math.max(MIN_WIDTH, frame.width ?? 0,
-      ...frame.layers.filter(layer => layer.style === 1).map(layer => 72 + layer.data.values.length * 37));
-    canvas.style.width = minWidth + 'px';
-    stage.render(frame.layers);
-    for (const [index, svg] of [...canvas.querySelectorAll('.avc-svg')].entries()) {
-      const { id, title, roles } = frame.layers[index];
-      svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', title);
-      const followOutput = id === 'c-output' || id === 'c-current-run';
-      if (followOutput || id === 'c-candidates' || id === 'c-active' || id === 'c-frozen') {
-        const viewport = svg.parentElement;
-        viewport.scrollTop = followOutput ? viewport.scrollHeight : 0;
-        if (viewport.scrollHeight > viewport.clientHeight) {
-          const focus = roles.focus1?.[0];
-          const cell = focus == null ? null : svg.querySelector('[data-avc-key="g-' + focus + '"] rect');
-          if (cell) {
-            const bottom = cell.getBoundingClientRect().bottom;
-            viewport.scrollTop += Math.max(0, bottom - viewport.getBoundingClientRect().bottom + 4);
-          }
-          viewport.tabIndex = 0;
-          viewport.setAttribute('role', 'region');
-          viewport.setAttribute('aria-label', title);
-        } else {
-          viewport.removeAttribute('tabindex');
-          viewport.removeAttribute('role');
-          viewport.removeAttribute('aria-label');
-        }
-      }
-    }
-    state?.showStep(step);
+    const { width, layer } = searchTree(step);
+    canvas.style.width = width + 'px';
+    stage.render([layer]);
+    const svg = canvas.querySelector('.avc-svg');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', layer.title);
+    state.showStep(step);
     caption.textContent = step.description;
     status.textContent = describeStructuredStep(run, step, config, 'c');
   }

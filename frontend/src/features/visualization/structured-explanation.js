@@ -19,16 +19,40 @@ function fields(pairs) {
   });
 }
 
-function dataDetails(v, algorithm) {
+function dataDetails({ variables: v, algorithm, event }) {
   switch (algorithm) {
-    case 'optimal-merge-tree':
-      return fields([['候选权重', v.candidates.map(id => v.nodes[id].weight)],
-        ['选中权重', v.selected.length ? v.selected.map(id => v.nodes[id].weight) : null], ['累计代价', v.cost]]);
-    case 'multiway-merge':
-      return fields([['归并趟次', v.pass], ['读取下标', v.positions], ['本批已输出', v.output.length + ' 项']]);
-    case 'replacement-selection':
-      return fields([['下一输入下标', v.readIndex], ['活动区', v.active.map(item => item.value)],
-        ['冻结区', v.frozen.map(item => item.value)], ['已完成有序段', v.runs.length + ' 段']]);
+    case 'optimal-merge-tree': {
+      if (event === 'merge') {
+        const [left, right] = v.selected.map(id => v.nodes[id].weight);
+        const parent = v.nodes[v.parent].weight;
+        return [`本次合并 ${left} + ${right} = ${parent}`, `累计代价 ${v.cost - parent} + ${parent} = ${v.cost}`];
+      }
+      const picked = v.selected.map(id => '#' + id + '（权重 ' + v.nodes[id].weight + '）').join('、');
+      return fields([['取出', picked], [event === 'done' ? '总代价' : '累计代价', v.cost]]);
+    }
+    case 'multiway-merge': {
+      const { selected } = v;
+      const position = selected ? v.positions[selected.run - v.groupStart] : null;
+      const next = event === 'output' ? (v.runs[selected.run][position] === undefined ? '已读完' : '移到下标 ' + position) : null;
+      const details = fields([['输入有序段', event === 'init' ? v.runs.length : null],
+        ['归并路数', event === 'init' ? v.k : null], ['归并趟次', v.pass || null],
+        ['来源', selected && `段 ${selected.run}，下标 ${selected.index}，值 ${selected.value}`],
+        ['来源游标', next], ['本批已输出', v.group ? v.output.length + ' 项' : null]]);
+      if (event === 'select' && v.candidates.some(candidate => candidate.run !== selected.run && candidate.value === selected.value)) {
+        details.push('候选值相同时先取段号较小的一路');
+      }
+      return details;
+    }
+    case 'replacement-selection': {
+      const readValue = v.incoming ? `A[${v.incoming.index}] = ${v.incoming.value}` : null;
+      const last = v.incoming ? v.selected.value : null;
+      return fields([
+        ['当前输出段', ['run-end', 'done'].includes(event) ? null : v.runIndex],
+        ['读入', readValue], ['本段末值', last],
+        ['缓冲占用', v.active.length + v.frozen.length + ' / ' + v.capacity],
+        ['已完成有序段', v.runs.length ? v.runs.length + ' 段' : null],
+      ]);
+    }
     default: {
       const current = v.nodes.find(node => node.id === v.currentNode);
       return fields([['当前键', v.key], ['当前节点的键', current?.keys],
@@ -98,7 +122,7 @@ function stringDetails(run, step) {
 export function describeStructuredStep(run, step, config, packageId) {
   const { variables: v } = step;
   let details;
-  if (packageId === 'c') details = dataDetails(v, step.algorithm);
+  if (packageId === 'c') details = dataDetails(step);
   if (packageId === 'd') details = keyedDetails(v);
   if (packageId === 'e') {
     const previous = run.steps[step.stepIndex - 1];

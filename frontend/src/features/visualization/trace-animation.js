@@ -40,6 +40,27 @@ export function indexedCard(id, title, values, roles = {}, cellLabels) {
   });
 }
 
+export function renderTraceLayers(canvas, stage, layers, options) {
+  stage.render(layers, options);
+  const byId = new Map(layers.map(layer => [layer.id, layer]));
+  for (const svg of canvas.querySelectorAll('.avc-svg')) {
+    const layer = byId.get(svg.dataset.avcSvg);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', layer.title);
+    for (const { id, fullLabel } of layer.data.nodes ?? []) {
+      if (!fullLabel) continue;
+      const circle = svg.querySelector(`[data-avc-key="n-${id}"] circle`);
+      if (!circle) continue;
+      let title = circle.querySelector('title');
+      if (!title) {
+        title = document.createElementNS(SVG_NS, 'title');
+        circle.append(title);
+      }
+      title.textContent = fullLabel;
+    }
+  }
+}
+
 export function createTraceAnimation(host, explainHost, stateView, frameFor, packageId, { run, config, fillViewport = false }) {
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-' + packageId;
@@ -53,13 +74,13 @@ export function createTraceAnimation(host, explainHost, stateView, frameFor, pac
     const state = document.createElement('div');
     state.className = 'trace-animation-state';
     state.setAttribute('role', 'region');
-    state.setAttribute('aria-label', '遍历状态');
+    state.setAttribute('aria-label', stateView.label ?? '遍历状态');
     state.tabIndex = 0;
     state.append(stateView.element);
     viewport = document.createElement('div');
     viewport.className = 'trace-animation-viewport';
     viewport.setAttribute('role', 'region');
-    viewport.setAttribute('aria-label', '二叉树画布');
+    viewport.setAttribute('aria-label', stateView.canvasLabel ?? '二叉树画布');
     viewport.tabIndex = 0;
     viewport.append(canvas);
     element.append(state, viewport);
@@ -81,24 +102,7 @@ export function createTraceAnimation(host, explainHost, stateView, frameFor, pac
       canvas.style.minWidth = canvasWidth + 'px';
       canvas.style.minHeight = canvasHeight + 'px';
     }
-    stage.render(layers, options);
-    const byId = new Map(layers.map(layer => [layer.id, layer]));
-    for (const svg of canvas.querySelectorAll('.avc-svg')) {
-      const layer = byId.get(svg.dataset.avcSvg);
-      svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', layer.title);
-      for (const { id, fullLabel } of layer.data.nodes ?? []) {
-        if (!fullLabel) continue;
-        const circle = svg.querySelector(`[data-avc-key="n-${id}"] circle`);
-        if (!circle) continue;
-        let title = circle.querySelector('title');
-        if (!title) {
-          title = document.createElementNS(SVG_NS, 'title');
-          circle.append(title);
-        }
-        title.textContent = fullLabel;
-      }
-    }
+    renderTraceLayers(canvas, stage, layers, options);
   }
   const observer = fillViewport ? new ResizeObserver(() => {
     if (current) render(current, { animate: false });

@@ -59,6 +59,15 @@ async function startStringMatch(page, algorithm, text, pattern) {
   return response.json();
 }
 
+async function assertGraphLayout(page, algorithm) {
+  const state = await page.locator('.trace-animation-state').boundingBox();
+  const graph = await page.locator('.trace-animation-viewport').boundingBox();
+  const body = await page.locator('[data-viz-body]').boundingBox();
+  assert.ok(graph.width > state.width && Math.abs(state.x + state.width - graph.x) <= 1, algorithm);
+  assert.ok(Math.abs(graph.height - body.height) <= 1 && Math.abs(state.height - body.height) <= 1, algorithm);
+  assert.equal(await page.locator('.trace-animation-viewport .canvas-card').count(), 0);
+}
+
 async function assertAnimation(page, run, step) {
   const stage = page.locator('[data-viz-engine="plus-f"] .avc-svg');
   const stringMatch = step.algorithm === 'kmp' || step.algorithm === 'naive-string-match';
@@ -97,10 +106,11 @@ async function assertAnimation(page, run, step) {
   if (step.algorithm === 'kmp') {
     assert.deepEqual(await cells(page, 'kmp-next'), Array.from(run.input.pattern, (_, index) => display(v[v.mode][index])));
   }
-  if (step.algorithm === 'expression-dag' && v.nodes.length) {
+  if (step.algorithm === 'expression-dag') {
     const graph = layer(page, 'expression-dag');
     assert.equal(await graph.locator('[data-avc-key^="n-f"]').count(), v.nodes.length);
     assert.equal(await graph.locator('[data-avc-key^="e-f"]').count(), v.edges.length);
+    assert.deepEqual(await cells(page, 'build-stack'), v.stack.map(String));
     if (step.done && !step.result.error) {
       const root = graph.locator('[data-avc-key="ns-f' + v.root + '"]');
       assert.equal(await root.textContent(), '#' + v.root + ' = ' + run.result.value);
@@ -110,6 +120,12 @@ async function assertAnimation(page, run, step) {
     const graph = layer(page, 'activities');
     assert.equal(await graph.locator('[data-avc-key^="n-f"]').count(), run.input.nodes.length);
     assert.equal(await graph.locator('[data-avc-key^="e-f"]').count(), run.input.edges.length);
+    assert.deepEqual(await cells(page, 'queue'), v.queue);
+    assert.deepEqual(await cells(page, 'order'), v.order);
+    if (v.activityIndex != null) {
+      const row = page.locator('.f-critical-tables tr[data-current="true"]');
+      assert.deepEqual((await row.locator('td').allTextContents()).slice(0, 3), v.currentEdge.map(String));
+    }
     if (step.done && !step.result.error) {
       const critical = graph.locator('[data-avc-key^="e-f"] :is(line, polyline):not([data-role="arrow"])[stroke="#0a6b4a"]');
       assert.equal(await critical.count(), v.criticalEdges.length);
@@ -161,6 +177,19 @@ try {
     assert.deepEqual(field ? run.result[field] : run.result, result, id);
     if (mode) assert.equal(run.input.mode, mode, id);
     await assertStep(page, run, 0);
+    if (id === 'expression-dag' || id === 'critical-path') {
+      await assertGraphLayout(page, id);
+      await page.locator('[data-viz-full]').click();
+      await assertGraphLayout(page, id);
+      await page.keyboard.press('Escape');
+      const ruler = page.locator('[data-tl-ruler]');
+      for (const step of run.steps.slice(1)) {
+        await ruler.press('ArrowRight');
+        await assertStep(page, run, step.stepIndex);
+      }
+      await ruler.press('Home');
+      await assertStep(page, run, 0);
+    }
     await page.click('#nextBtn');
     await assertStep(page, run, 1);
     if (id === 'infix-to-postfix') {
@@ -344,7 +373,7 @@ try {
     const { width, height } = svg.viewBox.baseVal;
     return box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height;
   }), 'all vertices fit the wide graph canvas');
-  assert.ok(await page.locator('[data-viz-body]').evaluate(body => {
+  assert.ok(await page.locator('.trace-animation-viewport').evaluate(body => {
     body.scrollLeft = body.scrollWidth;
     return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
   }), 'the graph scrolls within the workbench');
@@ -500,7 +529,7 @@ try {
     const { width, height } = svg.viewBox.baseVal;
     return box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height;
   }), 'full cache labels fit the graph canvas');
-  assert.ok(await page.locator('[data-viz-body]').evaluate(body => {
+  assert.ok(await page.locator('.trace-animation-viewport').evaluate(body => {
     body.scrollLeft = body.scrollWidth;
     return body.scrollLeft > 0 && document.documentElement.scrollWidth <= innerWidth;
   }), 'a wide DAG scrolls within the desktop workbench');

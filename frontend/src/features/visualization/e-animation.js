@@ -1,7 +1,8 @@
 import { gridLayer, linkLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createMatrixAnimation } from './e-matrix-animation.js';
-import { createTraceAnimation, indexedCard, windowStart } from './trace-animation.js';
-import { countingSnapshot, linkedChain } from '../workbench/e-state.js';
+import { createESortAnimation } from './e-sort-animation.js';
+import { createTraceAnimation } from './trace-animation.js';
+import { linkedChain } from '../workbench/e-state.js';
 
 const fullCanvasLabels = new Map([
   ['array-list-reverse', ['顺序表', '顺序表动画，i 和 j 标记交换位置']],
@@ -120,53 +121,14 @@ function listFrame(step, previous, fitViewport) {
   })];
 }
 
-function radixFrame(step, previous) {
-  const { cnt, exp, tmp } = step.variables;
-  const old = previous?.variables;
-  const layers = [indexedCard('e-array', step.done ? '排序结果' : '当前数组', step.array)];
-  if (cnt) {
-    const changed = old?.cnt && old.exp === exp ? cnt.findIndex((value, i) => value !== old.cnt[i]) : -1;
-    layers.push(indexedCard('e-buckets', '桶计数 · 位权 ' + exp, cnt, { swap: changed < 0 ? [] : [changed] }));
-  }
-  if (tmp) {
-    const placed = step.event === 'place' ? tmp.findIndex((value, i) => value !== old?.tmp?.[i]) : -1;
-    layers.push(indexedCard('e-output', '本轮回填', tmp.map(value => value ?? '—'), { added: placed < 0 ? [] : [placed] }));
-  }
-  return layers;
-}
-
-function countingFrame(run, step, init) {
-  const layers = [indexedCard('e-array', '输入数组', step.array)];
-  const snapshot = countingSnapshot(run, step, init);
-  const { countDiff } = step.variables;
-  const output = step.variables.output ?? (step.done ? step.result ?? [] : null);
-  if (snapshot) {
-    const { min, counts, current } = snapshot;
-    const size = 21;
-    const first = windowStart(counts.length, size, current);
-    const shown = counts.slice(first, first + size);
-    const range = counts.length > size ? ` · 下标 ${first}–${first + shown.length - 1}，共 ${counts.length} 项` : '';
-    layers.push(indexedCard('e-counts', '计数（格下为数值）' + range, shown,
-      { swap: countDiff ? [countDiff.index - first] : [] }, shown.map((_, offset) => min + first + offset)));
-  }
-  if (output) {
-    const previous = run.steps[step.stepIndex - 1]?.variables.output;
-    const placed = step.event === 'place_output' ? output.findIndex((value, i) => value !== (previous?.[i] ?? null)) : -1;
-    layers.push(indexedCard('e-output', '输出数组', output.map(value => value ?? '—'), { added: placed < 0 ? [] : [placed] }));
-  }
-  return layers;
-}
-
 export function createEAnimation(host, explainHost, run, config) {
   if (config.view === 'matrix') return createMatrixAnimation(host, explainHost, run, config);
+  if (config.group === 'sort') return createESortAnimation(host, explainHost, run, config);
   const fillViewport = fullCanvasLabels.has(run.algorithm);
-  const init = config.view === 'counting' ? run.steps.find(step => step.event === 'count_init') : null;
   const previous = step => run.steps[step.stepIndex - 1];
   const frames = {
     array: run.algorithm === 'array-list-delete-range' ? deleteRangeFrame : reverseFrame,
     linked: step => listFrame(step, previous(step)),
-    radix: step => radixFrame(step, previous(step)),
-    counting: step => countingFrame(run, step, init),
   };
   return createTraceAnimation(host, explainHost, null, frames[config.view], 'e', { run, config, fillViewport });
 }

@@ -119,7 +119,8 @@ export function layout(layer, rect, env = {}) {
     const stroke = st !== 'idle' ? s.stroke : nd.stroke || LINK.LinkNodeFrame;
     prims.push(P.circle(`n-${nd.id}`, p[0], p[1], nodeR, { fill, stroke, sw: borderWidth(st) + 0.4, opacity: s.opacity, z: 3 }));
     prims.push(P.text(`nv-${nd.id}`, p[0], p[1], String(nd.label ?? nd.id), { size: props.nodeLabelSize ?? 12, fill: st !== 'idle' ? s.text : UI.text, z: 4, opacity: s.opacity }));
-    if (nd.sub != null) prims.push(P.text(`ns-${nd.id}`, p[0], p[1] + nodeR + 11, String(nd.sub), { size: props.nodeDetailSize ?? 9, fill: UI.textMuted, z: 4 }));
+    if (nd.sub != null) prims.push(P.text(`ns-${nd.id}`, p[0], p[1] + nodeR + (props.nodeDetailOffset ?? 11),
+      String(nd.sub), { size: props.nodeDetailSize ?? 9, fill: UI.textMuted, z: 4 }));
     if (nd.badge) prims.push(P.chip(`nb-${nd.id}`, p[0], p[1] - nodeR - 12, nd.badge, toneFor(0)));
     nodes.set(`node:${nd.id}`, { x: p[0], y: p[1] });
   }

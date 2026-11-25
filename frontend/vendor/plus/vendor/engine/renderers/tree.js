@@ -120,6 +120,7 @@ function layoutAsCanvas(data, rect, roles, props) {
   if (data.name) prims.push(P.text('name', rect.x + 16, rect.y + 16, data.name, { align: 'left', size: 12, fill: '#b0197f' }));
 
   // 孩子边（先画线后画点，AnyviewC 的 LinkLinkFirst 思想）
+  const highlighted = new Set(props.highlightedEdges ?? []);
   for (const { node } of order) {
     for (const cid of childrenOf(node)) {
       if (!map.has(cid)) continue;
@@ -128,8 +129,9 @@ function layoutAsCanvas(data, rect, roles, props) {
       const x2 = px(cid);
       const y2 = py(cid);
       const tag = data.edgeTags ? data.edgeTags[cid] : null;
-      prims.push(P.line(`e-${node.id}-${cid}`, x1, y1 + 16, x2, y2 - 16, { stroke: '#b9c3d6', sw: 1.4, z: 1 }));
-      if (tag) prims.push(P.text(`et-${cid}`, (x1 + x2) / 2 + (tag === 'L' ? -8 : 8), (y1 + y2) / 2, tag, { size: 10, fill: UI.textMuted }));
+      const active = highlighted.has(cid);
+      prims.push(P.line(`e-${node.id}-${cid}`, x1, y1 + 16, x2, y2 - 16, { stroke: active ? '#6650cf' : '#b9c3d6', sw: active ? 2.8 : 1.4, z: 1 }));
+      if (tag) prims.push(P.text(`et-${cid}`, (x1 + x2) / 2 + (tag === 'L' ? -8 : 8), (y1 + y2) / 2, tag, { size: active ? 12 : 10, fill: active ? '#6650cf' : UI.textMuted }));
     }
   }
   // 线索边（前驱/后继）：虚线 + "线索"标记
@@ -139,7 +141,10 @@ function layoutAsCanvas(data, rect, roles, props) {
     const y1 = py(t.from);
     const x2 = px(t.to);
     const y2 = py(t.to);
-    prims.push(P.line(`th-${t.from}-${t.to}`, x1, y1, x2, y2, { stroke: t.type === 'next' ? '#0a6b4a' : '#8a4b00', sw: 1.2, dash: [5, 4], z: 1 }));
+    prims.push(P.line(`th-${t.from}-${t.to}`, x1, y1, x2, y2, {
+      stroke: t.type === 'next' ? '#0a6b4a' : '#8a4b00', sw: t.active ? 2.8 : 1.2,
+      dash: [5, 4], arrow: t.directed ? 'end' : undefined, z: t.active ? 2 : 1,
+    }));
   }
   // 新增边（树/森林转换、重建）
   for (const e of data.extraEdges || []) {

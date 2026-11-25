@@ -13,19 +13,20 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
 
 const examples = [
   ['array-list-reverse', [5, 4, 3, 2, 1]],
-  ['array-list-delete-range', [1, 5], '逻辑长度 2'],
+  ['array-list-delete-range', [1, 5]],
   ['singly-linked-list-insert', [1, 2, 3]],
   ['singly-linked-list-delete', [2, 3]],
   ['singly-linked-list-reverse', [6, 4, 2]],
   ['kth-from-end', { nodeId: 2, value: 1 }],
-  ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }, '转置输出'],
-  ['radix-sort', [3, 10, 21, 21], '排序结果'],
-  ['counting-sort', [-1, 0, 2, 2], '输出数组'],
+  ['sparse-matrix-transpose', { rows: 4, cols: 2, triples: [{ i: 0, j: 1, e: -3 }, { i: 2, j: 0, e: 4 }, { i: 3, j: 1, e: 7 }] }],
+  ['radix-sort', [3, 10, 21, 21]],
+  ['counting-sort', [-1, 0, 2, 2]],
 ];
 
 const layer = (page, id) => page.locator('[data-viz-engine="plus-e"] [data-avc-svg="' + id + '"]');
 const cells = (page, id) => layer(page, id).locator('[data-avc-key^="gv-"]').allTextContents();
 const display = value => String(value ?? '—');
+const radixBucket = (page, digit) => page.locator(`.e-radix-bucket[data-bucket="${digit}"]`);
 
 const runPath = algorithm => '/api/algorithms/' + algorithm + '/runs';
 
@@ -36,6 +37,38 @@ async function assertFullCanvas(page, id) {
     return svg && svg.viewBox.baseVal.width === viewport.clientWidth && svg.viewBox.baseVal.height === viewport.clientHeight;
   }, id);
   assert.equal(await page.locator('.e-state-tables, .trace-animation-stage .canvas-card').count(), 0);
+}
+
+async function assertMatrixLayout(page) {
+  const view = page.locator('.e-matrix-animation');
+  const lanes = view.locator('.e-matrix-lane');
+  const [left, right, columns] = await Promise.all([0, 1, 2].map(index => lanes.nth(index).boundingBox()));
+  const bounds = await view.boundingBox();
+  assert.ok(left.width > 0 && Math.abs(left.width - right.width) <= 1);
+  assert.ok(left.x + left.width < right.x && left.y === right.y);
+  assert.ok(columns.y >= left.y + left.height - 1 && Math.abs(columns.width - bounds.width) <= 1);
+  assert.equal(await page.locator('.e-state-tables').count(), 0);
+}
+
+async function assertSortLayout(page) {
+  const view = page.locator('.e-sort-animation');
+  const inside = view.locator('.array-animation-row');
+  const [input, counts, output] = await Promise.all([0, 1, 2].map(index => inside.nth(index).boundingBox()));
+  const canvas = await page.locator('[data-viz-body]').boundingBox();
+  assert.ok(input.width >= canvas.width - 54 && input.width === counts.width && input.width === output.width);
+  assert.ok(input.y < counts.y && counts.y < output.y);
+  assert.ok(input.height + counts.height + output.height >= canvas.height - 32);
+  assert.equal(await view.locator('.canvas-card, table').count(), 0);
+}
+
+async function assertSortFocus(page, id, index) {
+  const cell = layer(page, id).locator(`[data-avc-key="g-${index}"] rect`);
+  assert.equal(await cell.getAttribute('stroke-width'), '2');
+  assert.ok(await cell.evaluate(rect => {
+    const track = rect.closest('.array-animation-track').getBoundingClientRect();
+    const cell = rect.getBoundingClientRect();
+    return cell.left >= track.left - 1 && cell.right <= track.right + 1;
+  }));
 }
 
 async function start(page, algorithm, status = 200) {
@@ -55,7 +88,10 @@ async function assertStep(page, run, index) {
   { index, lineId: step.lineId });
   assert.equal(await page.locator('[data-explain-host] .bsviz-caption').textContent(), step.description);
   const visible = page.locator('[data-viz-engine="plus-e"] .avc-svg');
-  assert.ok(await visible.count(), step.algorithm);
+  assert.ok(await page.locator('[data-viz-engine="plus-e"]').isVisible(), step.algorithm);
+  if (step.algorithm !== 'sparse-matrix-transpose' && (!['radix-sort', 'counting-sort'].includes(step.algorithm) || step.array.length)) {
+    assert.ok(await visible.count(), step.algorithm);
+  }
   assert.doesNotMatch((await visible.allTextContents()).join(' '), /渲染失败|undefined|NaN/);
   const v = step.variables;
   if (v.nodes) {
@@ -67,19 +103,13 @@ async function assertStep(page, run, index) {
       if (next != null) assert.equal(await svg.locator('[data-avc-key="link-n' + id + '-n' + next + '"]').count(), 1);
     }
   } else if (v.triples) {
-    assert.deepEqual(await cells(page, 'e-triples'), v.triples.flatMap(({ i, j, e }) => [i, j, e].map(display)));
-    if (v.out) assert.deepEqual(await cells(page, 'e-transpose'), v.out.flatMap(({ i, j, e }) => [i, j, e].map(display)));
-  } else if (step.array.length <= 10) {
+    assert.deepEqual(await cells(page, 'e-triples'), v.triples.map(triple => display(triple.e)));
+    const expected = v.out ? v.out.map(triple => display(triple.e)) : Array(v.triples.length).fill('—');
+    assert.deepEqual(await cells(page, 'e-transpose'), expected);
+  } else if (step.algorithm === 'array-list-delete-range' || step.array.length <= 10) {
     assert.deepEqual(await cells(page, 'e-array'), step.array.map(display));
     if (v.tmp || v.output) assert.deepEqual(await cells(page, 'e-output'), (v.tmp ?? v.output).map(display));
   }
-}
-
-const tableRows = (page, title) => page.locator('.e-state-tables table')
-  .filter({ has: page.locator('caption', { hasText: title }) }).locator('tbody tr');
-
-async function values(rows, column) {
-  return rows.evaluateAll((elements, index) => elements.map(row => row.cells[index].textContent), column);
 }
 
 let browser;
@@ -98,15 +128,26 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base);
 
-  for (const [algorithm, expected, title] of examples) {
+  for (const [algorithm, expected] of examples) {
     await selectWorkbenchAlgorithm(page, algorithm);
     await page.click('#fillDemo');
     const run = await start(page, algorithm);
     assert.deepEqual(run.result, expected, algorithm);
     assert.deepEqual(run.steps.at(-1).result, expected, algorithm);
     await assertStep(page, run, 0);
-    if (!title) {
-      const id = algorithm === 'array-list-reverse' ? 'e-array' : 'e-list';
+    if (algorithm === 'sparse-matrix-transpose') {
+      await assertMatrixLayout(page);
+      await page.locator('[data-viz-full]').click();
+      await assertMatrixLayout(page);
+      await page.keyboard.press('Escape');
+      await assertMatrixLayout(page);
+    } else if (['radix-sort', 'counting-sort'].includes(algorithm)) {
+      await assertSortLayout(page);
+      await page.locator('[data-viz-full]').click();
+      await assertSortLayout(page);
+      await page.keyboard.press('Escape');
+    } else {
+      const id = algorithm.startsWith('array-list-') ? 'e-array' : 'e-list';
       await assertFullCanvas(page, id);
       await page.locator('[data-viz-full]').click();
       await assertFullCanvas(page, id);
@@ -115,12 +156,68 @@ try {
     }
     await page.click('#nextBtn');
     await assertStep(page, run, 1);
+    if (algorithm === 'radix-sort') {
+      const countIndex = run.steps.findIndex(step => step.event === 'count-digit');
+      assert.ok(countIndex > 1);
+      const ruler = page.locator('[data-tl-ruler]');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      const slide = async value => {
+        assert.ok(await ruler.evaluate((control, number) => {
+          control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          const tile = document.querySelector('.e-radix-animation .array-animation-moving-value');
+          return tile?.textContent === String(number) && tile.getAnimations().length > 0;
+        }, value));
+      };
+      for (let index = 1; index < countIndex - 1; index++) await page.click('#nextBtn');
+      await slide(21);
+      await assertStep(page, run, countIndex);
+      assert.deepEqual(await page.locator('.e-radix-bucket-count').allTextContents(), run.steps[countIndex].variables.cnt.map(String));
+      assert.match(await page.locator('.e-radix-bucket-note').textContent(), /^数位频次/);
+      await assertSortFocus(page, 'e-array', 0);
+      assert.equal(await radixBucket(page, 1).locator('.e-radix-member.is-focused').getAttribute('data-input-index'), '0');
+      const prefix = run.steps.findIndex(step => step.event === 'prefix');
+      for (let index = countIndex; index < prefix; index++) await page.click('#nextBtn');
+      await assertStep(page, run, prefix);
+      assert.match(await page.locator('.e-radix-bucket-note').textContent(), /^累计计数/);
+      assert.equal(await radixBucket(page, 0).locator('.e-radix-bucket-head.is-related').count(), 1);
+      assert.equal(await radixBucket(page, 1).locator('.e-radix-bucket-head.is-focused').count(), 1);
+      assert.deepEqual(await radixBucket(page, 1).locator('.e-radix-member-index').allTextContents(), ['#0', '#2']);
+      assert.deepEqual(await radixBucket(page, 1).locator('.e-radix-member-value').allTextContents(), ['21', '21']);
+      const placement = run.steps.findIndex(step => step.event === 'place');
+      for (let index = prefix; index < placement - 1; index++) await page.click('#nextBtn');
+      await slide(10);
+      await assertStep(page, run, placement);
+      assert.match(await page.locator('.e-radix-bucket-note').textContent(), /^回填游标/);
+      await assertSortFocus(page, 'e-array', 3);
+      assert.equal(await radixBucket(page, 0).locator('.e-radix-bucket-head.is-focused').count(), 1);
+      await assertSortFocus(page, 'e-output', 0);
+      await ruler.press('ArrowRight');
+      assert.equal(await radixBucket(page, 1).locator('.e-radix-member.is-focused').getAttribute('data-input-index'), '2');
+      await assertSortFocus(page, 'e-output', 2);
+      await ruler.press('ArrowRight');
+      await ruler.press('ArrowRight');
+      assert.equal(await radixBucket(page, 1).locator('.e-radix-member.is-focused').getAttribute('data-input-index'), '0');
+      assert.equal(await radixBucket(page, 1).locator('.e-radix-member.is-written').getAttribute('data-input-index'), '2');
+      await assertSortFocus(page, 'e-output', 1);
+      await ruler.press('ArrowLeft');
+      assert.equal(await radixBucket(page, 1).locator('.e-radix-member[data-input-index="0"].is-written').count(), 0);
+      assert.equal(await page.locator('.e-state-tables caption', { hasText: /位权.*计数表/ }).count(), 0);
+    }
     if (algorithm === 'array-list-reverse') {
       const svg = layer(page, 'e-array');
       for (const [index, label] of [[0, 'i · 0'], [4, 'j · 4']]) {
         assert.equal(await svg.locator(`[data-avc-key="idx-${index}"]`).textContent(), label);
         assert.equal(await svg.locator(`[data-avc-key="g-${index}"] rect`).getAttribute('stroke-width'), '2');
       }
+    }
+    if (algorithm === 'array-list-delete-range') {
+      const svg = layer(page, 'e-array');
+      assert.equal(await svg.locator('[data-avc-key="idx-1"]').textContent(), '待删 1');
+      assert.equal(await svg.locator('[data-avc-key="idx-3"]').textContent(), '待删 3');
+      await page.click('#nextBtn');
+      await assertStep(page, run, 2);
+      assert.equal(await svg.locator('[data-avc-key="idx-4"]').textContent(), '来源 4');
+      assert.equal(await svg.locator('[data-avc-key="idx-1"]').textContent(), '目标 1');
     }
     if (algorithm === 'kth-from-end') {
       const svg = layer(page, 'e-list');
@@ -159,12 +256,17 @@ try {
     }
     await page.click('[data-t="last"]');
     await assertStep(page, run, run.steps.length - 1);
+    if (algorithm === 'array-list-delete-range') {
+      const svg = layer(page, 'e-array');
+      assert.equal(await svg.locator('[data-avc-key="ptr-length"] text').textContent(), '逻辑长度 2');
+      assert.equal(await svg.locator('[data-avc-key="idx-2"]').textContent(), '无效 2');
+      assert.equal(await svg.locator('[data-avc-key="g-2"] rect').getAttribute('fill'), '#f7f8fc');
+    }
     if (algorithm === 'kth-from-end') {
       const svg = layer(page, 'e-list');
       assert.match(await svg.locator('[data-avc-key="name"]').textContent(), /找到结点 #2，值 1/);
       assert.equal(await svg.locator('[data-avc-key="ne-n2-0"] line').getAttribute('stroke'), '#0a6b4a');
     }
-    if (title) assert.ok(await page.locator('.e-state-tables caption', { hasText: title }).count(), algorithm);
     await page.click('#prevBtn');
     const step = run.steps.at(-2);
     await assertStep(page, run, step.stepIndex);
@@ -184,32 +286,88 @@ try {
   }
 
   const ruler = page.locator('[data-tl-ruler]');
-  const counts = tableRows(page, '计数表');
+  const counts = layer(page, 'e-counts');
   await ruler.press('End');
-  assert.deepEqual(await values(counts, 2), ['0', '1', '2', '2']);
+  assert.deepEqual(await cells(page, 'e-counts'), ['0', '1', '2', '2']);
   await ruler.press('Home');
   await ruler.press('ArrowRight');
-  assert.deepEqual(await values(counts, 2), ['0', '0', '0', '0']);
+  assert.deepEqual(await cells(page, 'e-counts'), ['0', '0', '0', '0']);
   await ruler.press('ArrowRight');
-  assert.deepEqual(await values(counts, 2), ['0', '0', '0', '1']);
   assert.deepEqual(await cells(page, 'e-counts'), ['0', '0', '0', '1']);
+  await assertSortFocus(page, 'e-array', 0);
+  await assertSortFocus(page, 'e-counts', 3);
+  await ruler.press('ArrowRight');
+  await assertSortFocus(page, 'e-array', 1);
+  await assertSortFocus(page, 'e-counts', 0);
+  assert.equal(await counts.locator('[data-avc-key="idx-0"]').textContent(), '-1');
+  assert.match(await page.locator('[data-explain-host] .bsviz-status').textContent(), /数值 -1（cnt\[0\]） 0 → 1/);
   await ruler.press('ArrowLeft');
-  assert.deepEqual(await values(counts, 2), ['0', '0', '0', '0']);
+  await ruler.press('ArrowLeft');
   assert.deepEqual(await cells(page, 'e-counts'), ['0', '0', '0', '0']);
 
   await page.click('#e-edit');
-  await page.fill('#e-data', '-2500, 2499, -2500');
+  const wideInput = Array.from({ length: 24 }, (_, index) => index % 2 === 0 ? -2500 : 2499);
+  await page.fill('#e-data', wideInput.join(', '));
   const wide = await start(page, 'counting-sort');
+  const sortedWide = [...wideInput].sort((a, b) => a - b);
+  assert.deepEqual(wide.result, sortedWide);
+  assert.deepEqual(await cells(page, 'e-array'), wideInput.map(String));
   assert.ok(wide.steps.length > 5000);
   assert.ok(await page.locator('.tl-tick').count() <= 100);
+  await ruler.press('ArrowRight');
+  await ruler.press('ArrowRight');
+  await ruler.press('ArrowRight');
+  await assertStep(page, wide, 3);
+  assert.match(await counts.getAttribute('aria-label'), /下标 4979–4999，共 5000 项/);
+  assert.equal(await counts.locator('[data-avc-key="idx-20"]').textContent(), '2499');
+  assert.equal(await counts.locator('[data-avc-key="gv-20"]').textContent(), '1');
+  await assertSortFocus(page, 'e-counts', 20);
+  assert.equal((await cells(page, 'e-counts')).length, 21);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wide, 2);
+  assert.match(await counts.getAttribute('aria-label'), /下标 0–20/);
+  assert.equal(await counts.locator('[data-avc-key="idx-0"]').textContent(), '-2500');
+  assert.equal(await counts.locator('[data-avc-key="gv-0"]').textContent(), '1');
   await ruler.press('End');
   await assertStep(page, wide, wide.steps.length - 1);
-  assert.deepEqual(await values(tableRows(page, '输出数组'), 1), ['-2500', '-2500', '2499']);
+  assert.deepEqual(await cells(page, 'e-output'), sortedWide.map(String));
+  assert.equal(await page.locator('.e-state-tables').count(), 0);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wide, wide.steps.length - 2);
+  const output = layer(page, 'e-output');
+  await assertSortFocus(page, 'e-array', 0);
+  await assertSortFocus(page, 'e-counts', 0);
+  await assertSortFocus(page, 'e-output', 0);
+  await ruler.press('ArrowLeft');
+  await assertStep(page, wide, wide.steps.length - 3);
+  assert.equal(await output.locator('[data-avc-key="gv-0"]').textContent(), '—');
+  assert.match(await counts.getAttribute('aria-label'), /下标 4979–4999/);
+  assert.equal(await counts.locator('[data-avc-key="gv-20"]').textContent(), '12');
+  await ruler.press('End');
   await page.click('#e-edit');
   await page.fill('#e-data', '-2500, 2500');
   assert.equal((await start(page, 'counting-sort', 400)).error.code, 'INVALID_INPUT');
   await page.waitForFunction(() => document.querySelector('#msgBox').textContent.includes('值域跨度'));
   await assertStep(page, wide, wide.steps.length - 1);
+  await page.fill('#e-data', '');
+  const emptyCount = await start(page, 'counting-sort');
+  await ruler.press('End');
+  await assertStep(page, emptyCount, emptyCount.steps.length - 1);
+  assert.deepEqual(emptyCount.result, []);
+  assert.deepEqual(await cells(page, 'e-output'), []);
+  assert.equal(await counts.count(), 0);
+  await page.click('#e-edit');
+  const int32Labels = Array.from({ length: 4 }, (_, index) => -2147483648 + index);
+  await page.fill('#e-data', int32Labels.join(', '));
+  const int32Count = await start(page, 'counting-sort');
+  await ruler.press('ArrowRight');
+  await assertStep(page, int32Count, 1);
+  const labels = counts.locator('[data-avc-key^="idx-"] text');
+  assert.deepEqual(await labels.allTextContents(), int32Labels.map(String));
+  assert.ok(await counts.evaluate(svg => [...svg.querySelectorAll('[data-avc-key^="idx-"]')].every((label, index) => {
+    const cell = svg.querySelector('[data-avc-key="g-' + index + '"] rect');
+    return label.querySelector('text').getBBox().width <= cell.getBBox().width;
+  })), '32-bit integer labels fit their count cells');
 
   await selectWorkbenchAlgorithm(page, 'singly-linked-list-insert');
   await page.fill('#e-pos', '0');
@@ -267,13 +425,41 @@ try {
   await selectWorkbenchAlgorithm(page, 'sparse-matrix-transpose');
   await page.fill('#e-rows', '1');
   await page.fill('#e-cols', '64');
-  await page.fill('#e-data', '0,63,1.5');
+  const matrixValues = Array.from({ length: 64 }, (_, col) => col + 0.5);
+  await page.fill('#e-data', matrixValues.map((value, col) => `0,${col},${value}`).join('\n'));
   const matrix = await start(page, 'sparse-matrix-transpose');
-  assert.deepEqual(matrix.result, { rows: 64, cols: 1, triples: [{ i: 63, j: 0, e: 1.5 }] });
+  assert.deepEqual(matrix.result, { rows: 64, cols: 1, triples: matrixValues.map((e, i) => ({ i, j: 0, e })) });
   await page.locator('[data-t="last"]').click();
-  assert.deepEqual(await values(tableRows(page, '转置输出'), 1), ['63']);
+  await assertStep(page, matrix, matrix.steps.length - 1);
   const matrixStep = await page.request.get(base + '/api/runs/' + matrix.runId + '/steps/' + (matrix.steps.length - 1));
   assert.deepEqual((await matrixStep.json()).step, matrix.steps.at(-1));
+  await page.click('#prevBtn');
+  await assertStep(page, matrix, matrix.steps.length - 2);
+  const columnGrid = layer(page, 'e-column-positions');
+  assert.equal(await columnGrid.locator('[data-avc-key="gv-63"]').textContent(), '1 → 64');
+  assert.equal(await columnGrid.locator('[data-avc-key="idx-63"]').textContent(), '原列 63');
+  assert.equal(await layer(page, 'e-triples').locator('[data-avc-key="idx-63"]').textContent(), '63 · (0,63)');
+  assert.equal(await layer(page, 'e-transpose').locator('[data-avc-key="idx-63"]').textContent(), '63 · (63,0)');
+  for (const id of ['e-triples', 'e-transpose']) {
+    const svg = layer(page, id);
+    assert.equal(await svg.locator('[data-avc-key="g-63"] rect').getAttribute('stroke-width'), '2');
+    assert.ok(await svg.evaluate(element => element.closest('.e-matrix-track').scrollTop > 0));
+  }
+  assert.ok(await columnGrid.evaluate(svg => svg.closest('.e-matrix-track').scrollLeft > 0));
+  await page.click('#resetBtn');
+  await assertStep(page, matrix, 0);
+  assert.equal(await columnGrid.count(), 0);
+  assert.equal(await layer(page, 'e-transpose').evaluate(svg => svg.closest('.e-matrix-track').scrollTop), 0);
+
+  await page.click('#e-edit');
+  await page.fill('#e-rows', '0');
+  await page.fill('#e-cols', '0');
+  await page.fill('#e-data', '');
+  const emptyMatrix = await start(page, 'sparse-matrix-transpose');
+  await page.locator('[data-t="last"]').click();
+  await assertStep(page, emptyMatrix, emptyMatrix.steps.length - 1);
+  assert.deepEqual(emptyMatrix.result, { rows: 0, cols: 0, triples: [] });
+  assert.equal(await page.getByText('没有三元组', { exact: true }).count(), 2);
 
   await selectWorkbenchAlgorithm(page, 'array-list-reverse');
   await page.setViewportSize({ width: 1120, height: 800 });
@@ -300,6 +486,39 @@ try {
     await ruler.press('End');
     assert.deepEqual(await cells(page, 'e-array'), [...input].reverse().map(String));
   }
+
+  await selectWorkbenchAlgorithm(page, 'array-list-delete-range');
+  const stored = Array.from({ length: 64 }, (_, index) => -2147483648 + index);
+  await page.fill('#e-data', stored.join(','));
+  await page.fill('#e-left', '1');
+  await page.fill('#e-right', '61');
+  const ranged = await start(page, 'array-list-delete-range');
+  await assertFullCanvas(page, 'e-array');
+  await page.click('#nextBtn');
+  await page.click('#nextBtn');
+  await assertStep(page, ranged, 2);
+  const rangeCanvas = layer(page, 'e-array');
+  assert.equal(await rangeCanvas.locator('[data-avc-key="idx-62"]').textContent(), '来源 62');
+  assert.equal(await rangeCanvas.locator('[data-avc-key="idx-1"]').textContent(), '目标 1');
+  await ruler.press('End');
+  await assertStep(page, ranged, ranged.steps.length - 1);
+  assert.deepEqual(ranged.result, [stored[0], stored[62], stored[63]]);
+  assert.equal(await rangeCanvas.locator('[data-avc-key="idx-63"]').textContent(), '无效 63');
+  assert.ok(await rangeCanvas.evaluate(svg => {
+    const box = svg.getBBox();
+    const { width, height } = svg.viewBox.baseVal;
+    return box.x >= -1 && box.y >= -1 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1;
+  }), '64 个槽位和逻辑长度标记都显示在画布内');
+
+  await page.click('#e-edit');
+  await page.fill('#e-left', '0');
+  await page.fill('#e-right', '63');
+  const cleared = await start(page, 'array-list-delete-range');
+  await ruler.press('End');
+  await assertStep(page, cleared, cleared.steps.length - 1);
+  assert.deepEqual(cleared.result, []);
+  assert.equal(await rangeCanvas.locator('[data-avc-key="ptr-length"] text').textContent(), '逻辑长度 0');
+  assert.equal(await rangeCanvas.locator('[data-avc-key^="idx-"]', { hasText: '无效' }).count(), 64);
 
   await selectWorkbenchAlgorithm(page, 'kth-from-end');
   const repeated = Array(64).fill(-2147483648);
@@ -337,6 +556,22 @@ try {
     assert.equal((await response.json()).error.code, 'INVALID_INPUT', algorithm);
   }
 
+  await page.goto(base + '/#workbench?algorithm=radix-sort');
+  await page.fill('#e-data', Array.from({ length: 24 }, (_, index) => index * 10 + 1).join(','));
+  const sameBucket = await start(page, 'radix-sort');
+  const lastCount = sameBucket.steps.findIndex(step => step.event === 'prefix') - 1;
+  for (let index = 0; index < lastCount; index++) await ruler.press('ArrowRight');
+  const members = radixBucket(page, 1).locator('.e-radix-bucket-members');
+  assert.equal(await members.locator('.e-radix-member').count(), 24);
+  assert.ok(await members.evaluate(list => {
+    const tile = list.querySelector('.is-focused').getBoundingClientRect();
+    const bounds = list.getBoundingClientRect();
+    return list.scrollTop > 0 && tile.top >= bounds.top - 1 && tile.bottom <= bounds.bottom + 1;
+  }));
+  await ruler.press('ArrowLeft');
+  assert.equal(await members.locator('.e-radix-member').count(), 23);
+
+  await page.click('#e-edit');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(base + '/#workbench?algorithm=radix-sort');
   await page.click('#fillDemo');

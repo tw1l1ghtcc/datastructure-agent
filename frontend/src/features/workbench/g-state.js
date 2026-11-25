@@ -22,7 +22,7 @@ export function gVariableText(config, key, variables) {
     case 'stack':
       return showList(value, frame => frame.level === undefined ? frame.id : frame.id + '（第 ' + frame.level + ' 层）');
     case 'edge':
-      return (value.from ?? '空') + ' → ' + (value.to ?? '空') + '（' + edgeKinds[value.kind ?? value.side] + '）';
+      return (value.from ?? value.parent ?? '空') + ' → ' + (value.to ?? value.child ?? '空') + '（' + edgeKinds[value.kind ?? value.side] + '）';
     case 'mode':
       return config.modes.find(([mode]) => mode === value)?.[1] ?? value;
     case 'candidates':

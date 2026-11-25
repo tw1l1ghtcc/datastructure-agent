@@ -11,7 +11,7 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   windowsHide: true
 });
 
-async function assertFullCanvas(page, selector = '[data-graph-view="canvas"] [data-viz-body]') {
+async function assertFullCanvas(page, selector = '[data-graph-view="canvas"] [data-viz-body], .b-graph-viewport') {
   await page.waitForFunction(selector => {
     const body = document.querySelector(selector);
     const svg = body?.querySelector('.b-animation-stage > svg');
@@ -82,6 +82,53 @@ async function assertSplitCanvas(page, tablePane) {
   assert.deepEqual(await tablePane.boundingBox(), tableBox);
   await page.locator('[data-viz-view-reset]').click();
   assert.equal(await scale(), 1);
+}
+
+async function assertTraversalSlides(page, run) {
+  const queue = run.algorithm === 'bfs';
+  const key = queue ? 'queue' : 'stack';
+  const pane = page.getByRole('region', { name: queue ? '队列' : '栈', exact: true });
+  assert.match(await pane.locator('.b-traversal-ends').innerText(), queue ? /队首.*出队\s+队尾.*入队/ : /栈底\s+栈顶.*入栈.*出栈/);
+  const drawer = await pane.boundingBox();
+  const graph = await page.locator('.b-graph-viewport').boundingBox();
+  assert.ok(Math.abs(drawer.x + drawer.width - graph.x) <= 1);
+  const readMove = direction => page.evaluate(direction => {
+    document.querySelector(direction > 0 ? '#nextBtn' : '#prevBtn').click();
+    return [...document.querySelectorAll('.b-traversal-cell')].map(cell => ({
+      value: cell.textContent,
+      leaving: Boolean(cell.closest('.b-traversal-exits')),
+      frames: cell.getAnimations().flatMap(animation => animation.effect.getKeyframes().map(frame => frame.transform)),
+    }));
+  }, direction);
+  function assertMotion(moves, from, to, sign, leaving) {
+    const changed = (leaving ? from : to).find(value => !(leaving ? to : from).includes(value));
+    const item = moves.find(item => item.value === changed && item.leaving === leaving);
+    assert.ok(item?.frames.length, '变化的顶点应滑动');
+    const offset = leaving ? item.frames.at(-1) : item.frames[0];
+    assert.equal(Math.sign(Number(offset.match(/translateX\(([-\d.]+)px\)/)[1])), sign);
+    assert.deepEqual(moves.filter(item => !item.leaving).map(item => item.value), to);
+  }
+  const ruler = page.locator('[data-tl-ruler]');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  for (const [event, leaving] of [[queue ? 'enqueue-neighbor' : 'push-neighbor', false], [queue ? 'dequeue' : 'pop', true]]) {
+    const step = run.steps.find(step => step.event === event &&
+      (leaving ? run.steps[step.stepIndex - 1] : step).variables[key].length > 1);
+    await ruler.press('Home');
+    for (let i = 1; i < step.stepIndex; i++) await ruler.press('ArrowRight');
+    const before = run.steps[step.stepIndex - 1].variables[key];
+    const after = step.variables[key];
+    const sign = queue && leaving ? -1 : 1;
+    assertMotion(await readMove(1), before, after, sign, leaving);
+    assert.ok((await page.locator('[data-explain-host] .bsviz-status').textContent())
+      .includes('[' + before.join('、') + '] → [' + after.join('、') + ']'));
+    assertMotion(await readMove(-1), after, before, sign, !leaving);
+  }
+  const exits = pane.locator('.b-traversal-exits > *');
+  await pane.locator('.b-traversal-lane').evaluate(async lane => {
+    await Promise.allSettled(lane.getAnimations({ subtree: true }).map(animation => animation.finished));
+  });
+  assert.equal(await exits.count(), 0);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
 }
 
 let browser;
@@ -180,6 +227,7 @@ try {
   assert.match(reply.answer, /BFS.*队列/);
   await page.locator('.message.assistant').getByText(/BFS.*队列/).waitFor();
   await page.click('#tutor-close');
+  await assertTraversalSlides(page, run);
   await page.click('[data-t="last"]');
 
   await page.click('#bfs-edit');
@@ -256,6 +304,7 @@ try {
     assert.ok((await page.locator('[data-explain-host] .bsviz-status').innerText()).length > 10, algorithm);
     assert.equal(await page.locator('[data-viz-engine="plus-graph"] [data-graph-node]').count(), graphRun.graph.nodes.length);
     if (algorithm !== 'floyd' && algorithm !== 'dijkstra') await assertFullCanvas(page);
+    if (algorithm === 'dfs') await assertTraversalSlides(page, graphRun);
     if (algorithm === 'kruskal') {
       const selected = page.locator('[data-layer="b-graph"] [data-avc-key^="e-"] line[stroke="#0a6b4a"]');
       assert.equal(await selected.count(), graphRun.result.selectedEdges.length);
@@ -356,20 +405,21 @@ try {
   await page.locator('[data-tl-ruler]').press('Home');
   assert.equal(await edge('e-D-D').locator('[data-role="arrow"]').count(), 1);
 
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1120, height: 800 });
   await assertFullCanvas(page);
-  const viewport = page.locator('[data-viz-body]');
-  const scene = page.locator('[data-viz-scene]');
+  const viewport = page.locator('.b-graph-viewport');
+  const scene = page.locator('.b-animation-stage');
   const scale = () => scene.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).a);
-  await viewport.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100, clientX: 140, clientY: 340 });
+  await viewport.scrollIntoViewIfNeeded();
+  const bounds = await viewport.boundingBox();
+  const startX = bounds.x + bounds.width / 2;
+  const startY = bounds.y + bounds.height / 2;
+  await viewport.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100, clientX: startX, clientY: startY });
   assert.ok(await scale() > 1);
   await page.locator('#nextBtn').click();
   assert.ok(await scale() > 1);
   await page.locator('[data-viz-view-reset]').click();
   assert.equal(await scale(), 1);
-  const bounds = await viewport.boundingBox();
-  const startX = bounds.x + bounds.width / 2;
-  const startY = bounds.y + bounds.height / 2;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX + 32, startY + 20);
@@ -387,9 +437,17 @@ try {
   const denseNodes = ['A', 'B', 'C', 'D', 'E', ...Array.from({ length: 25 }, (_, i) => 'N' + (i + 1))];
   await page.fill('#bfs-nodes', denseNodes.join(', '));
   await page.click('#bfs-next');
+  for (const to of denseNodes.slice(3)) {
+    await page.click('#bfs-add-edge');
+    const row = page.locator('.bfs-edge').last();
+    await row.locator('select').nth(0).selectOption('A');
+    await row.locator('select').nth(1).selectOption(to);
+  }
   const densePending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/bfs/runs'));
   await page.click('#startBtn');
-  assert.equal((await densePending).status(), 200);
+  const denseResponse = await densePending;
+  assert.equal(denseResponse.status(), 200);
+  const denseRun = await denseResponse.json();
   await page.locator('#bfs-edit').waitFor();
   await assertFullCanvas(page);
   const denseGraph = page.locator('.b-animation-stage > svg');
@@ -399,6 +457,20 @@ try {
     const { width, height } = svg.viewBox.baseVal;
     return box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height;
   }), '30 个顶点及其图元均在画布内');
+  const widest = denseRun.steps.find(step => step.variables.queue.length === denseNodes.length - 1);
+  await page.locator('#nextBtn').evaluate((button, count) => {
+    for (let i = 0; i < count; i++) button.click();
+  }, widest.stepIndex);
+  const queuePane = page.getByRole('region', { name: '队列', exact: true });
+  assert.deepEqual(await queuePane.locator('.b-traversal-cells > li').allTextContents(), widest.variables.queue);
+  const scroll = queuePane.locator('.b-traversal-scroll');
+  assert.ok(await scroll.evaluate(element => element.scrollLeft > 0), '长队列入队时露出队尾');
+  const dequeue = denseRun.steps.slice(widest.stepIndex + 1).find(step => step.event === 'dequeue');
+  await page.locator('#nextBtn').evaluate((button, count) => {
+    for (let i = 0; i < count; i++) button.click();
+  }, dequeue.stepIndex - widest.stepIndex);
+  assert.deepEqual(await queuePane.locator('.b-traversal-cells > li').allTextContents(), dequeue.variables.queue);
+  assert.equal(await scroll.evaluate(element => element.scrollLeft), 0, '出队时回到队首');
   await page.setViewportSize({ width: 1280, height: 900 });
 
   await selectWorkbenchAlgorithm(page, 'binary-search');

@@ -22,7 +22,7 @@ function layerValues(page, layer, key) {
 }
 
 async function tempValues(page) {
-  const values = await page.locator('.a-merge-cells .bsviz-value').allTextContents();
+  const values = await page.locator('.a-merge-cells [data-filled] .bsviz-value').allTextContents();
   return values.map(Number);
 }
 
@@ -91,30 +91,181 @@ try {
     }
     assert.deepEqual(await chartIndices(page, '.is-comparing'), []);
     assert.deepEqual(await chartIndices(page, '.is-sorted'), []);
+    let hole = null;
+    const fixed = [];
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     for(let index=0;index<run.steps.length;index++){
-      if(index)await page.click('#nextBtn');
-      assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'),run.steps[index].lineId,algorithm);
       const step = run.steps[index], v = step.variables;
+      const filling = step.event === 'fill-left' || step.event === 'fill-right';
+      const binaryInsertion = algorithm === 'binary-insertion-sort';
+      const shell = algorithm === 'shell-sort';
+      const insertion = algorithm === 'insertion-sort' || binaryInsertion || shell;
+      const heap = algorithm === 'heap-sort';
+      const merge = algorithm === 'merge-sort';
+      const selection = algorithm === 'selection-sort';
+      if (algorithm === 'quick-sort' && filling) {
+        assert.ok(await page.locator('[data-tl-ruler]').evaluate((control, destination) => {
+          control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          return document.querySelector(`.prototype-array-cell[data-index="${destination}"] > g`)?.getAnimations().length > 0;
+        }, v.fillTo));
+      } else if (insertion && ['select', 'move', 'insert'].includes(step.event)) {
+        const destination = step.event === 'move' ? v.j + (shell ? 0 : 1) : v.insertIndex;
+        const target = step.event === 'select' ? '.a-sort-held-value'
+          : `.prototype-array-cell[data-index="${destination}"] > g`;
+        assert.ok(await page.locator('[data-tl-ruler]').evaluate((control, selector) => {
+          control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          return document.querySelector(selector)?.getAnimations().length > 0;
+        }, target));
+      } else if ((heap || selection) && step.event === 'swap') {
+        const indices = selection ? [v.i, v.minIndex] : step.lineId === 'swap-root' ? [0, v.i] : [v.i, v.largest];
+        assert.ok(await page.locator('[data-tl-ruler]').evaluate((control, targets) => {
+          control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          return targets.every(index => document.querySelector(
+            `.prototype-array-cell[data-index="${index}"] > g`)?.getAnimations().length > 0);
+        }, indices));
+      } else if (merge && ['pick', 'copy'].includes(step.event)) {
+        assert.ok(await page.locator('[data-tl-ruler]').evaluate(control => {
+          control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          return document.querySelector('.a-merge-view .array-animation-moving-value')?.getAnimations().length > 0;
+        }));
+      } else if(index)await page.click('#nextBtn');
+      assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'),run.steps[index].lineId,algorithm);
       assert.doesNotMatch(await page.locator('.variables').innerText(),/undefined|NaN/);
-      assert.equal(await page.locator('[data-explain-host] .bsviz-caption').textContent(), step.description);
-      assert.deepEqual(await page.locator('.prototype-array-value').allTextContents(), step.array.map(String));
-      if (algorithm === 'merge-sort') {
+      const caption = await page.locator('[data-explain-host] .bsviz-caption').textContent();
+      const expected = step.array.map(String);
+      if (algorithm === 'quick-sort') {
+        assert.equal(caption, await page.locator('#step-description').textContent());
+        if (step.event === 'init-pivot') {
+          hole = v.low;
+          const pivot = page.locator('.a-sort-held-value');
+          assert.equal(await pivot.textContent(), String(v.pivot));
+          assert.equal(await pivot.evaluate(node => getComputedStyle(node).borderStyle), 'solid');
+        }
+        if (filling) {
+          expected[v.fillTo] = String(step.array[v.fillFrom]);
+          hole = v.fillFrom;
+          assert.ok(caption.includes('填入 A[' + v.fillTo + ']，坑移到 A[' + v.fillFrom + ']'));
+        }
+        if (step.event === 'place-pivot') {
+          hole = null;
+          fixed.push(v.i);
+          assert.equal(await page.locator('.a-sort-held-location').textContent(), 'A[' + v.i + ']');
+        }
+        if (hole != null) expected[hole] = '坑';
+        assert.deepEqual(await chartIndices(page, '.is-hole'), hole == null ? [] : [hole]);
+        if (!step.done) assert.deepEqual(await chartIndices(page, '.is-sorted'), fixed.slice().sort((a, b) => a - b));
+      } else if (insertion) {
+        assert.equal(caption, await page.locator('#step-description').textContent());
+        if (step.event === 'select') hole = v.i;
+        if (step.event === 'move') {
+          hole = shell ? v.j - v.gap : v.j;
+          assert.ok(caption.includes(shell ? `右移 ${v.gap} 格到 A[${v.j}]` : `右移到 A[${v.j + 1}]`));
+        }
+        if (step.event === 'insert') {
+          hole = null;
+          assert.equal(await page.locator('.a-sort-held-value').textContent(), '—');
+          assert.equal(await page.locator('.a-sort-held-location').textContent(), '已写回 A[' + v.insertIndex + ']');
+          assert.match(caption, /写回/);
+        }
+        if (hole != null) {
+          expected[hole] = '空位';
+          assert.equal(await page.locator('.a-sort-held-value').textContent(), String(v.temp));
+          assert.equal(await page.locator('.a-sort-held-location').textContent(), '当前空位 A[' + hole + ']');
+        }
+        assert.deepEqual(await chartIndices(page, '.is-hole'), hole == null ? [] : [hole]);
+        if (binaryInsertion && ['init-bounds', 'compare', 'move-left', 'move-right'].includes(step.event)) {
+          const range = Array.from({ length: Math.max(0, v.right - v.left + 1) }, (_, offset) => v.left + offset);
+          assert.deepEqual(await chartIndices(page, '.is-binary-insertion-range'), range);
+          const status = await page.locator('[data-explain-host] .bsviz-status').textContent();
+          if (!range.length) assert.match(status, /查找区间已空/);
+          if (v.mid != null) assert.equal(await page.locator('[data-ptr="mid"] text').textContent(), 'M');
+        }
+        if (binaryInsertion && step.event === 'found-pos') {
+          assert.equal(await page.locator('[data-ptr="插入"] text').textContent(), '插入');
+        }
+        if (shell && v.gap > 0 && !step.done) {
+          assert.deepEqual(await page.locator('.a-shell-group-label').allTextContents(),
+            step.array.map((_, index) => '组' + (index % v.gap + 1)));
+          if (step.event === 'gap') {
+            assert.deepEqual(await chartIndices(page, '.is-excluded'), []);
+            assert.equal(await page.locator('.a-sort-held').isHidden(), true);
+          } else {
+            assert.deepEqual(await chartIndices(page, '.is-excluded'),
+              step.array.flatMap((_, index) => index % v.gap === v.i % v.gap ? [] : [index]));
+          }
+        }
+      } else if (heap || merge || selection) {
+        assert.equal(caption, await page.locator('#step-description').textContent());
+      } else {
+        assert.equal(caption, step.description);
+      }
+      assert.deepEqual(await page.locator('.prototype-array-value').allTextContents(), expected);
+      if (merge) {
         assert.deepEqual(await tempValues(page), v.temp);
         const focusIndex = step.event === 'pick' ? v.temp.length - 1 : step.event === 'copy' ? v.p - 1 : null;
         const active = await page.locator('.a-merge-cells .is-comparing .bsviz-idx').allTextContents();
         assert.deepEqual(active.map(Number), focusIndex === null ? [] : [focusIndex]);
         if (step.event === 'pick') assert.deepEqual(await chartIndices(page, '.is-comparing'), [v.readIndex]);
         if (step.event === 'copy') assert.deepEqual(await chartIndices(page, '.is-comparing'), [v.low + v.p - 1]);
+        if (['merge-start', 'compare', 'pick'].includes(step.event)) {
+          const left = Array.from({ length: v.mid - v.low + 1 }, (_, offset) => v.low + offset);
+          const right = Array.from({ length: v.high - v.mid }, (_, offset) => v.mid + offset + 1);
+          assert.deepEqual(await chartIndices(page, '.is-merge-left'), left);
+          assert.deepEqual(await chartIndices(page, '.is-merge-right'), right);
+          const next = await page.locator('.a-merge-cells .is-next .bsviz-idx').allTextContents();
+          assert.deepEqual(next, v.temp.length < v.high - v.low + 1 ? [String(v.temp.length)] : []);
+        }
+        if (focusIndex != null) {
+          const pick = step.event === 'pick';
+          const arrayRole = pick ? 'source' : 'destination';
+          const tempRole = pick ? 'destination' : 'source';
+          assert.deepEqual(await chartIndices(page, `[data-transfer="${arrayRole}"]`),
+            [pick ? v.readIndex : v.low + focusIndex]);
+          assert.equal(await page.locator(`.a-merge-cells [data-transfer="${tempRole}"] .bsviz-idx`).textContent(), String(focusIndex));
+        }
       } else if (algorithm === 'heap-sort') {
         const size = step.done ? 0 : step.event === 'init' ? step.array.length
           : step.event === 'swap-root' ? v.heapSize + 1 : v.heapSize;
         assert.deepEqual(await layerValues(page, 'a-heap', 'tnv-'), step.array.slice(0, size));
+        assert.equal(await page.locator('.a-heap-boundary').count(), size > 0 && size < step.array.length ? 1 : 0);
+        const highlighted = await page.locator('[data-layer="a-heap"] [data-avc-key^="tn-"] circle[stroke="#8a4b00"]')
+          .evaluateAll(circles => circles.map(circle => Number(circle.closest('[data-avc-key]').getAttribute('data-avc-key').slice(3))));
+        assert.deepEqual(highlighted, (await chartIndices(page, '.is-comparing')).filter(index => index < size));
+        if (step.event === 'swap-root') {
+          assert.deepEqual(highlighted, [0, v.i]);
+          assert.ok(!(await chartIndices(page, '.is-sorted')).includes(v.i));
+        }
+        if (step.event === 'swap' && step.lineId === 'swap-root') {
+          assert.deepEqual(highlighted, [0]);
+          assert.equal((await chartIndices(page, '.is-sorted'))[0], v.i);
+          assert.match(caption, /已就位.*从新堆顶/);
+        }
+        if (step.lineId === 'swap-node') {
+          assert.deepEqual(highlighted, [v.largest]);
+          assert.ok(caption.includes('下沉到 A[' + v.largest + ']'));
+        }
       } else if (algorithm === 'binary-insertion-sort' && step.event === 'compare') {
         assert.deepEqual(await chartIndices(page, '.is-comparing'), [v.mid]);
       } else if (algorithm === 'shell-sort' && step.event === 'compare') {
-        assert.deepEqual(await chartIndices(page, '.is-comparing'), [v.j - v.gap, v.j]);
-      } else if (algorithm === 'quick-sort' && step.event === 'init-pivot') {
-        assert.equal(await page.locator('.a-sort-detail').textContent(), '枢轴值 ' + v.pivot);
+        assert.deepEqual(await chartIndices(page, '.is-comparing'), [v.j - v.gap]);
+      } else if (selection && step.event !== 'init' && !step.done) {
+        const placed = step.event === 'swap' || (step.event === 'check-swap' && v.i === v.minIndex);
+        const candidate = placed ? v.i : v.minIndex;
+        const scan = step.event === 'compare' || step.event === 'update-min';
+        assert.equal(await page.locator('.a-selection-candidate .a-sort-held-value').textContent(), String(step.array[candidate]));
+        assert.equal(await page.locator('.a-selection-candidate .a-sort-held-location').textContent(), '下标 ' + candidate);
+        assert.equal(await page.locator('#varMid').textContent(), String(candidate));
+        assert.equal(await page.locator('#varValue').textContent(), String(step.array[candidate]));
+        assert.deepEqual(await chartIndices(page, '.is-selection-min'), placed ? [] : [candidate]);
+        assert.equal(await page.locator('.a-selection-chart [data-ptr="j"]').count(), scan ? 1 : 0);
+        if (step.event === 'compare') assert.deepEqual(await chartIndices(page, '.is-comparing'), [v.j]);
+        if (step.event === 'update-min') assert.match(caption, new RegExp('更新为 ' + step.array[candidate] + '，下标是 ' + candidate));
+        if (step.event === 'check-swap' && !placed) assert.deepEqual(await chartIndices(page, '.is-comparing'), [v.i, candidate]);
+        if (placed) {
+          assert.deepEqual(await chartIndices(page, '.is-comparing'), []);
+          assert.equal((await chartIndices(page, '.is-sorted')).at(-1), v.i);
+          if (step.event === 'check-swap') assert.match(caption, /跳过交换/);
+        }
       }
     }
     const values=await page.locator('.prototype-array-value').allTextContents();
@@ -188,6 +339,26 @@ try {
     }
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   }
+  await page.goto(base + '/#workbench?algorithm=shell-sort');
+  await page.fill('#arrInput', dense.join(','));
+  await page.click('#startBtn');
+  const ruler = page.locator('[data-tl-ruler]');
+  await ruler.waitFor();
+  await page.locator('#nextBtn').click();
+  const groups = page.locator('.prototype-array-cell[data-shell-group]');
+  const palette = await groups.evaluateAll(cells => cells.map(cell => {
+    const { fill, stroke } = getComputedStyle(cell.querySelector('rect'));
+    return [cell.dataset.shellGroup, fill, stroke];
+  }));
+  assert.equal(palette.length, 24);
+  assert.equal(new Set(palette.slice(0, 12).map(([, fill]) => fill)).size, 12);
+  assert.equal(new Set(palette.slice(0, 12).map(([, , stroke]) => stroke)).size, 12);
+  assert.deepEqual(palette.slice(0, 12), palette.slice(12), '同组的两根柱子使用同一配色');
+  await ruler.press('ArrowLeft');
+  assert.equal(await groups.count(), 0);
+  await ruler.press('ArrowRight');
+  assert.deepEqual(await groups.locator('.a-shell-group-label').allTextContents(),
+    dense.map((_, index) => '组' + (index % 12 + 1)));
   assert.deepEqual(errors,[]);
   console.log('A package workbench acceptance passed.');
 }finally{await browser?.close();server.kill();}

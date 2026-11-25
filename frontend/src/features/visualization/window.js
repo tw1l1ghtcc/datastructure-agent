@@ -15,7 +15,7 @@ import { createCAnimation } from './c-animation.js';
 import { createVisualization } from './index.js';
 import { arraySearch } from '../workbench/array-search.js';
 import { graphAlgorithm } from '../workbench/graph-algorithms.js';
-import { createBAnimation, graphTableLabel } from './b-animation.js';
+import { createBAnimation, graphStateLabel } from './b-animation.js';
 import { isASort } from './a-sort-state.js';
 import { createASortVisualization } from './a-sort-view.js';
 import { buildPrototypeArrayFrame } from './prototype-array.js';
@@ -98,6 +98,9 @@ export function createVizWindow(host, {
   const traceView = e ?? f ?? g ?? c ?? d;
   const traceCanvasLabels = fullECanvasLabels(algorithm);
   const binaryTraversal = isBinaryTraversal(algorithm);
+  const reconstruction = algorithm === 'binary-tree-reconstruction';
+  const threadedTree = algorithm === 'threaded-binary-tree';
+  const forestTraversal = algorithm === 'tree-forest-traversal';
   const scrollTrace = traceView && !traceCanvasLabels;
   const unionFind = algorithm === 'union-find';
   /* 合并（PR #66 §1）：主分支把"排序"扩成 8 种，我们的 plus 示例也要用同一套窗口 */
@@ -121,11 +124,11 @@ export function createVizWindow(host, {
   const heapSort = algorithm === 'heap-sort';
   const splitSort = heapSort || algorithm === 'merge-sort';
   const fullCanvas = Boolean(graph || unionFind || splitSort || traceCanvasLabels);
-  const tableLabel = graphTableLabel(algorithm);
+  const stateLabel = graphStateLabel(algorithm);
   const search = arraySearch(algorithm);
   const useLegacy = !traceView && !unionFind && !search && !graph && !sorting && !custom && new URLSearchParams(window.location.search).get('viz') === 'legacy';
   root.innerHTML = TEMPLATE;
-  if (tableLabel) {
+  if (stateLabel) {
     root.dataset.graphView = 'split';
     root.querySelector('.viewport-hint').textContent = '右侧动画：拖拽平移 · Ctrl + 滚轮缩放 · Home 复位';
   } else if (graph) root.dataset.graphView = 'canvas';
@@ -138,17 +141,63 @@ export function createVizWindow(host, {
       root.dataset.traceCanvas = 'true';
       root.querySelector('.vh-title').textContent = title;
       root.querySelector('[data-viz-body]').setAttribute('aria-label', label);
-    } else if (binaryTraversal) {
+    } else if (binaryTraversal || reconstruction || forestTraversal) {
       root.dataset.traceCanvas = 'true';
       root.dataset.traceSplit = 'true';
-      root.querySelector('.vh-title').textContent = '二叉树与遍历状态';
-      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧遍历状态，右侧二叉树');
+      let canvasTitle = '二叉树与遍历状态';
+      let canvasLabel = '左侧遍历状态，右侧二叉树';
+      if (algorithm === 'binary-tree-level-order') canvasLabel = '左侧队列与分层访问结果，右侧二叉树';
+      if (reconstruction) {
+        canvasTitle = '重建区间与二叉树';
+        canvasLabel = '左侧前序与中序的重建区间，右侧二叉树';
+      }
+      if (forestTraversal) {
+        canvasTitle = '森林与遍历状态';
+        canvasLabel = '左侧递归栈与访问顺序，右侧森林';
+      }
+      root.querySelector('.vh-title').textContent = canvasTitle;
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', canvasLabel);
       root.querySelector('[data-viz-view-reset]').hidden = true;
       root.querySelector('.viewport-hint').hidden = true;
       const legend = root.querySelector('.viewport-legend');
       legend.hidden = false;
-      legend.setAttribute('aria-label', '遍历图例');
-      legend.innerHTML = '<span><b class="legend-right">橙</b> 当前节点</span><span><b class="legend-mid">绿</b> 已访问</span><span><b class="legend-related">紫</b> 本步关联节点</span>';
+      legend.setAttribute('aria-label', reconstruction ? '重建图例' : '遍历图例');
+      legend.innerHTML = reconstruction
+        ? '<span><b class="legend-right">橙</b> 当前根</span><span><b class="legend-left">蓝</b> 左子树区间</span><span><b class="legend-related">紫</b> 右子树区间</span><span>虚线：等待递归返回后接入</span>'
+        : '<span><b class="legend-right">橙</b> 当前节点</span><span><b class="legend-mid">绿</b> 已访问</span><span><b class="legend-related">紫</b> 本步关联节点</span>';
+    } else if (algorithm === 'tree-forest-conversion' || threadedTree) {
+      root.dataset.traceCanvas = 'true';
+      root.dataset.traceSplit = 'true';
+      root.querySelector('.vh-title').textContent = threadedTree ? '线索二叉树与中序序列' : '树与森林转换对照';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', threadedTree ? '上方线索二叉树，下方中序序列' : '左侧输入结构，右侧转换结果');
+      root.querySelector('[data-viz-view-reset]').hidden = true;
+      root.querySelector('.viewport-hint').hidden = true;
+      if (threadedTree) {
+        const legend = root.querySelector('.viewport-legend');
+        legend.hidden = false;
+        legend.setAttribute('aria-label', '线索图例');
+        legend.innerHTML = '<span>实线 孩子边</span><span><b class="legend-right">棕</b> 前驱线索</span><span><b class="legend-mid">绿</b> 后继线索</span>';
+      }
+    } else if (algorithm === 'huffman-coding') {
+      root.dataset.traceCanvas = 'true';
+      root.dataset.traceSplit = 'true';
+      root.querySelector('.vh-title').textContent = '候选结点、码字与哈夫曼树';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧候选结点与码字，右侧哈夫曼树');
+      root.querySelector('[data-viz-view-reset]').hidden = true;
+      root.querySelector('.viewport-hint').hidden = true;
+    } else if (algorithm === 'expression-dag' || algorithm === 'critical-path') {
+      const dag = algorithm === 'expression-dag';
+      root.dataset.traceCanvas = 'true';
+      root.dataset.traceSplit = 'true';
+      root.querySelector('.vh-title').textContent = dag ? '构图状态与表达式依赖图' : '拓扑队列、活动时差与关键路径';
+      root.querySelector('[data-viz-body]').setAttribute('aria-label', dag ? '左侧表达式转换和构图状态，右侧依赖图' : '左侧队列与活动时差，右侧活动网络');
+      root.querySelector('[data-viz-view-reset]').hidden = true;
+      root.querySelector('.viewport-hint').hidden = true;
+      const legend = root.querySelector('.viewport-legend');
+      legend.hidden = false;
+      legend.setAttribute('aria-label', dag ? '表达式依赖图图例' : '活动网络图例');
+      legend.innerHTML = dag ? '<span>箭头从操作数指向使用它的结点</span>'
+        : '<span><b class="legend-current-activity">红</b> 当前活动</span><span><b class="legend-mid">绿</b> 关键活动</span>';
     } else {
       root.dataset.traceAnimation = 'true';
       root.dataset.tableView = 'true';
@@ -166,11 +215,11 @@ export function createVizWindow(host, {
     root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧父节点表，右侧父指针森林');
   }
   if (graph) {
-    const tableViewTitle = tableLabel ? '图与' + tableLabel : null;
-    root.querySelector('.win-sub').textContent = graph.name + ' · ' + (tableViewTitle ?? '图视图');
-    root.querySelector('.vh-title').textContent = tableViewTitle ?? '图结构';
+    const stateViewTitle = stateLabel ? '图与' + stateLabel : null;
+    root.querySelector('.win-sub').textContent = graph.name + ' · ' + (stateViewTitle ?? '图视图');
+    root.querySelector('.vh-title').textContent = stateViewTitle ?? '图结构';
     root.querySelector('.vh-sub').textContent = graph.title;
-    root.querySelector('[data-viz-body]').setAttribute('aria-label', tableLabel ? '左侧' + tableLabel + '，右侧图动画'
+    root.querySelector('[data-viz-body]').setAttribute('aria-label', stateLabel ? '左侧' + stateLabel + '，右侧图动画'
       : '图视口，拖拽平移，按住 Ctrl 滚动缩放，Home自适应取景');
     root.querySelector('.viewport-legend').hidden = true;
   }
@@ -196,7 +245,18 @@ export function createVizWindow(host, {
     root.querySelector('.vh-sub').textContent = `${sortName} · 升序`;
     const legend = root.querySelector('.viewport-legend');
     legend.setAttribute('aria-label', '排序图例');
-    legend.innerHTML = '<span><b class="legend-mid">绿</b> 已就位/最终位置</span><span><b class="legend-right">橙</b> 比较/操作</span>';
+    const binaryInsertion = algorithm === 'binary-insertion-sort';
+    const settledLabel = algorithm === 'insertion-sort' || binaryInsertion ? '当前有序部分'
+      : algorithm === 'merge-sort' ? '已写回或归并完成' : '已就位/最终位置';
+    const selectionSort = algorithm === 'selection-sort';
+    const actionLabel = selectionSort ? '扫描或待交换' : '比较/操作';
+    legend.innerHTML = `<span><b class="legend-mid">绿</b> ${settledLabel}</span><span><b class="legend-right">橙</b> ${actionLabel}</span>`;
+    if (selectionSort) legend.insertAdjacentHTML('beforeend', '<span><b class="legend-related">紫</b> 当前最小值</span>');
+    if (heapSort) legend.insertAdjacentHTML('beforeend', '<span><b class="legend-related">紫</b> 本步相关父子节点</span>');
+    if (binaryInsertion) legend.insertAdjacentHTML('beforeend', '<span><b class="legend-left">蓝</b> 当前查找范围</span>');
+    if (algorithm === 'merge-sort') {
+      legend.insertAdjacentHTML('beforeend', '<span><b class="legend-left">蓝</b> 左段</span><span><b class="legend-merge-right">紫</b> 右段</span>');
+    }
     if (splitSort) {
       root.dataset.sortView = 'split';
       root.querySelector('[data-viz-body]').setAttribute('aria-label', '左侧' + auxiliaryTitle + '，右侧排序柱状图');
@@ -244,10 +304,10 @@ export function createVizWindow(host, {
   let currentRun = run;
   let state = { stepIndex: 0, total: 0, playing: false, canPrev: false, canNext: false };
 
-  const cameraViewport = () => tableLabel ? scene.querySelector('.b-graph-viewport') : body;
+  const cameraViewport = () => stateLabel ? scene.querySelector('.b-graph-viewport') : body;
 
   function applyView() {
-    const target = tableLabel ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
+    const target = stateLabel ? cameraViewport()?.querySelector('.b-animation-stage') : scene;
     if (target) target.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   }
 

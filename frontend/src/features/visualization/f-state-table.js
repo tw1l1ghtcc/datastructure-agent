@@ -1,4 +1,6 @@
 import { stateText } from '../workbench/c-algorithms.js';
+import { createArrayAnimationRow } from './array-animation-row.js';
+import { compactLabel } from './trace-animation.js';
 
 function table(caption, headers, rows, selected = () => false) {
   const element = document.createElement('table');
@@ -20,77 +22,85 @@ function table(caption, headers, rows, selected = () => false) {
   return element;
 }
 
-const characterText = char => ({ ' ': '空格', '\t': '制表符', '\n': '换行', '\r': '回车' })[char] ?? char;
-const characterRows = text => Array.from(text ?? '', (char, index) => [index, characterText(char)]);
-const tokenRows = tokens => tokens.map(({ text, index }) => [text, index]);
 const edgeText = edge => edge[0] + ' → ' + edge[1] + '（' + edge[2] + '）';
 
-function matchTables(input, v, algorithm) {
-  const tables = [
-    table('匹配位置', ['已找到的起点'], [[v.matches]]),
-    table('主串', ['下标', '字符'], characterRows(input.text), index => index === v.i),
-    table('模式串', ['下标', '字符'], characterRows(input.pattern), index => index === (v.k ?? v.j)),
-  ];
-  if (algorithm === 'kmp') {
-    const rows = Array.from(input.pattern, (char, index) => [index, characterText(char), v.prefix[index], v.next[index], v.nextval[index]]);
-    tables.splice(1, 0, table('预处理表 · 当前使用 ' + v.mode, ['下标', '字符', '前缀长度', 'next', 'nextval'], rows,
-      index => index === (v.k ?? v.j)));
-  }
-  return tables;
-}
-
-function graphTables(algorithm, input, v) {
-  if (algorithm === 'expression-dag') {
-    return [
-      table('子表达式节点', ['编号', '词元', '左依赖', '右依赖', '缓存值'],
-        v.nodes.map(node => [node.id, node.token, node.left, node.right, v.cache[node.id]]), index => index === v.currentNode),
-      table('依赖边', ['操作数节点', '使用节点', '角色'], v.edges),
-    ];
-  }
+function criticalPathTables(input, v) {
   const rows = input.edges.map(([from, to, weight], index) => [
     from, to, weight, v.slack[index]?.float, v.criticalEdges.includes(index) ? '是' : '—',
   ]);
-  const tables = [
-    table('事件时间', ['事件', '最早时刻', '最迟时刻'], input.nodes.map(node => [node, v.earliest[node], v.latest[node]]),
-      index => input.nodes[index] === v.currentNode),
-    table('活动时差与关键边', ['起点', '终点', '工期', '时差', '关键'], rows, index => index === v.activityIndex),
-  ];
+  const tables = [table('活动时差与关键边', ['起点', '终点', '工期', '时差', '关键'], rows, index => index === v.activityIndex)];
   if (v.criticalPaths) tables.unshift(table('关键路径', ['活动顺序'], v.criticalPaths.map(path => [path.map(edgeText).join('，')])));
   return tables;
 }
 
-function outcome(algorithm, value) {
-  if (value?.error) return value.error;
-  if (algorithm === 'bracket-matching') return value.matched ? '匹配成功' : '下标 ' + value.index + ' 的括号未匹配';
-  if (algorithm === 'critical-path') return '工期 ' + value.duration + (value.morePaths ? '，表中展示前 8 条关键路径' : '');
-  return value?.value ?? value;
-}
-
-export function createFStateTable(config, algorithm, input) {
+export function createCriticalPathState(input) {
   const element = document.createElement('div');
-  element.className = 'c-state-tables';
+  element.className = 'f-graph-state f-critical-state';
+  const queue = createArrayAnimationRow('f-queue');
+  const order = createArrayAnimationRow('f-order');
+  const tables = document.createElement('div');
+  tables.className = 'c-state-tables f-critical-tables';
+  tables.tabIndex = 0;
+  tables.setAttribute('role', 'region');
+  tables.setAttribute('aria-label', '活动时差与关键路径');
+  element.append(queue.element, order.element, tables);
+  let pathListVisible = false;
   return {
     element,
+    label: '拓扑队列与活动时差',
+    canvasLabel: '关键路径活动网络画布',
     showStep(step) {
       const v = step.variables;
-      let views;
-      if (algorithm === 'bracket-matching') {
-        views = [
-          table('括号栈（底到顶）', ['原下标', '括号'], v.stack.map(({ i, char }) => [i, char])),
-          table('原字符串', ['下标', '字符'], characterRows(input.text), index => index === v.i),
-        ];
-      } else if (config.chapter === 4) {
-        views = matchTables(input, v, algorithm);
-      } else {
-        const stacks = v.operators ? [
-          table('运算符栈（底到顶）', ['词元', '原下标'], tokenRows(v.operators)),
-          table('后缀序列', ['词元', '原下标'], tokenRows(v.output)),
-        ] : [];
-        if (algorithm === 'expression-evaluation') stacks.unshift(table('操作数栈（底到顶）', ['值'], v.stack.map(value => [value])));
-        views = config.chapter === 6 ? [...graphTables(algorithm, input, v), ...stacks] : stacks;
+      if (!step.stepIndex) {
+        queue.rewind();
+        order.rewind();
       }
-      if (step.done) views.unshift(table('运行结果', ['结果'], [[outcome(algorithm, step.result)]]));
-      element.replaceChildren(...views);
+      queue.show({ title: '零入度队列', detail: '队首在左', values: v.queue.map(id => compactLabel(id, 8)),
+        fullValues: v.queue, roles: { focus2: 0 }, focus: 0, emptyText: '队列为空' });
+      order.show({ title: '拓扑序', values: v.order.map(id => compactLabel(id, 8)), fullValues: v.order,
+        roles: { added: step.event === 'visit' ? v.order.length - 1 : null }, focus: v.order.length - 1, emptyText: '尚未输出事件' });
+      tables.replaceChildren(...criticalPathTables(input, v));
+      if (!step.stepIndex || Boolean(v.criticalPaths) !== pathListVisible) tables.scrollTop = 0;
+      pathListVisible = Boolean(v.criticalPaths);
+      const active = tables.querySelector('tr[data-current="true"]');
+      if (active) {
+        const frame = tables.getBoundingClientRect();
+        const row = active.getBoundingClientRect();
+        if (row.top < frame.top + 30 || row.bottom > frame.top + tables.clientHeight) {
+          tables.scrollTop += row.top - frame.top - 34;
+        }
+      }
     },
+    destroy() { queue.clear(); order.clear(); },
+  };
+}
+
+export function createExpressionDagState(run) {
+  const element = document.createElement('div');
+  element.className = 'f-graph-state';
+  const operators = createArrayAnimationRow('f-operators');
+  const postfix = createArrayAnimationRow('f-postfix');
+  const stack = createArrayAnimationRow('f-build-stack');
+  element.append(operators.element, postfix.element, stack.element);
+  return {
+    element,
+    label: '表达式转换和构图状态',
+    canvasLabel: '表达式依赖图画布',
+    showStep(step) {
+      const v = step.variables;
+      const previous = run.steps[step.stepIndex - 1]?.variables;
+      const last = v.output.length - 1;
+      const appended = v.output.length > (previous?.output.length ?? 0);
+      if (!step.stepIndex) [operators, postfix, stack].forEach(row => row.rewind());
+      operators.show({ title: '运算符栈', detail: '栈顶在右', values: v.operators.map(token => token.text),
+        labels: v.operators.map(token => token.index), roles: { focus2: v.operators.length - 1 },
+        focus: v.operators.length - 1, emptyText: '栈为空' });
+      postfix.show({ title: '后缀序列', detail: '格下为原下标', values: v.output.map(token => token.text),
+        labels: v.output.map(token => token.index), focus: last,
+        roles: { added: appended ? last : null }, emptyText: '尚未输出词元' });
+      stack.show({ title: '构图栈', detail: '格内为结点编号，栈顶在右', values: v.stack,
+        roles: { focus2: v.stack.length - 1 }, focus: v.stack.length - 1, emptyText: '栈为空' });
+    },
+    destroy() { [operators, postfix, stack].forEach(row => row.clear()); },
   };
 }

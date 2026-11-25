@@ -51,13 +51,13 @@ const configs = {
   'radix-sort': {
     title: '基数排序', group: 'sort', view: 'radix', example: { list: [21, 3, 21, 10] },
     help: '元素须为非负整数。支持重复值。',
-    fields: [['exp', '当前位权'], ['maxv', '最大值'], ['cnt', '本轮桶计数'], ['tmp', '本轮回填结果']],
+    fields: [['exp', '当前位权'], ['maxv', '最大值']],
     prompt: '为什么从右往左回填可以保留同一数位上的顺序？',
   },
   'counting-sort': {
     title: '计数排序', group: 'sort', view: 'counting', example: { list: [2, -1, 2, 0] },
     help: '支持负数和重复值。最大值减最小值加 1 不得超过 5000。',
-    fields: [['min', '最小值'], ['max', '最大值'], ['countDiff', '本步计数变化'], ['output', '输出数组']],
+    fields: [['min', '最小值'], ['max', '最大值'], ['countDiff', '本步计数变化']],
     prompt: '累计计数怎样决定当前元素的输出下标？',
   },
 };

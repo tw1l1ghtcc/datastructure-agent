@@ -43,7 +43,7 @@ export function eVariableText(key, step, input, previous) {
     case 'shape':
       return v.rows + ' × ' + v.cols;
     case 'countDiff':
-      return v.countDiff ? '下标 ' + v.countDiff.index + '：' + v.countDiff.old + ' → ' + v.countDiff.new : '—';
+      return v.countDiff ? `数值 ${v.min + v.countDiff.index}（cnt[${v.countDiff.index}]） ${v.countDiff.old} → ${v.countDiff.new}` : '—';
     case 'value':
       return input.value ?? step.result?.value ?? '—';
     case 'pos':

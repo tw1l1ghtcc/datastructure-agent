@@ -647,6 +647,28 @@ export function passThread(c) {
   for (const th of ths) {
     const ax = th.x1, ay = th.y1, bx = th.x2, by = th.y2;
     const a0 = rAt(ax, ay), b0 = rAt(bx, by);
+    if (th.arrow && a0 && b0) {
+      // A directed thread must reach the target from outside its circle so its arrowhead stays visible.
+      const dx = bx - ax, dy = by - ay;
+      const distance = Math.hypot(dx, dy) || 1;
+      const bend = Math.min(42, distance * 0.38);
+      const cx = (ax + bx) / 2 - dy * bend / distance;
+      const cy = (ay + by) / 2 + dx * bend / distance;
+      const rim = ({ x, y, r }) => {
+        const length = Math.hypot(cx - x, cy - y) || 1;
+        const scale = (r + (T.sideGap ?? 1)) / length;
+        return [x + (cx - x) * scale, y + (cy - y) * scale];
+      };
+      const [startX, startY] = rim(a0);
+      const [endX, endY] = rim(b0);
+      th.kind = 'poly';
+      th.pts = Array.from({ length: 7 }, (_, index) => {
+        const t = index / 6, a = (1 - t) ** 2, b = 2 * t * (1 - t), d = t ** 2;
+        return [a * startX + b * cx + d * endX, a * startY + b * cy + d * endY];
+      });
+      delete th.x1; delete th.y1; delete th.x2; delete th.y2;
+      continue;
+    }
     if (a0 && b0) {
       /* ① 从结点**侧面**出入：目标在右就走右侧，在左就走左侧（同侧所以线是直的一条，不会拐） */
       const side = (bx - ax) < -1 ? -1 : 1;

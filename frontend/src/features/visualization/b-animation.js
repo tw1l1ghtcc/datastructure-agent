@@ -3,16 +3,19 @@ import { graphLayer } from '../../../vendor/plus/vendor/engine/model.js';
 import { createExplanationPanel } from './explanation-panel.js';
 import { describeGraphStep } from './graph-explanation.js';
 import { createUnionFindTable } from './union-find-table.js';
+import { createTraversalList } from './b-traversal-list.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const GRAPH_TABLE_LABELS = new Map([
+const GRAPH_STATE_LABELS = new Map([
+  ['bfs', '队列'],
+  ['dfs', '栈'],
   ['union-find', '父节点与秩'],
   ['floyd', '距离矩阵'],
   ['dijkstra', '最短路径状态表'],
 ]);
 
-export function graphTableLabel(algorithm) {
-  return GRAPH_TABLE_LABELS.get(algorithm);
+export function graphStateLabel(algorithm) {
+  return GRAPH_STATE_LABELS.get(algorithm);
 }
 
 function graphVertices(nodes) {
@@ -248,25 +251,28 @@ function installVertexTitles(host, vertices) {
 export function createBAnimation(host, run, explainHost) {
   const graph = run.graph ? prepareGraph(run) : null;
   const vertices = graph?.vertices ?? graphVertices(run.input.elements);
-  let stateTable;
-  if (!graph) stateTable = createUnionFindTable(run.input);
-  else if (run.algorithm === 'floyd') stateTable = createDistanceMatrix(run.graph.nodes);
-  else if (run.algorithm === 'dijkstra') stateTable = createDijkstraTable(run.graph);
+  const traversal = run.algorithm === 'bfs' || run.algorithm === 'dfs';
+  let stateView;
+  if (traversal) stateView = createTraversalList(run.algorithm);
+  else if (!graph) stateView = createUnionFindTable(run.input);
+  else if (run.algorithm === 'floyd') stateView = createDistanceMatrix(run.graph.nodes);
+  else if (run.algorithm === 'dijkstra') stateView = createDijkstraTable(run.graph);
   const element = document.createElement('div');
   element.dataset.vizEngine = 'plus-graph';
   element.className = 'b-animation';
   const canvas = document.createElement('div');
   canvas.className = 'plus-viz b-animation-stage';
-  if (stateTable) {
+  if (stateView) {
     element.classList.add('b-animation-split');
-    element.classList.toggle('b-animation-paths', Boolean(graph));
+    element.classList.toggle('b-animation-paths', Boolean(graph) && !traversal);
+    element.classList.toggle('b-animation-traversal', traversal);
     element.classList.toggle('b-animation-matrix', run.algorithm === 'floyd');
     const data = document.createElement('div');
     data.className = 'b-animation-data';
     data.tabIndex = 0;
     data.setAttribute('role', 'region');
-    data.setAttribute('aria-label', graphTableLabel(run.algorithm));
-    data.append(stateTable.element);
+    data.setAttribute('aria-label', graphStateLabel(run.algorithm));
+    data.append(stateView.element);
     const graphPane = document.createElement('div');
     graphPane.className = 'b-graph-viewport';
     graphPane.append(canvas);
@@ -299,7 +305,7 @@ export function createBAnimation(host, run, explainHost) {
     current = step;
     draw(step);
     const previous = run.steps[step.stepIndex - 1];
-    stateTable?.showStep(step, previous);
+    stateView?.showStep(step, previous);
     const explanation = graph ? describeGraphStep(run, step) : {
       action: step.description,
       detail: '集合数量：' + step.variables.setCount +
@@ -318,6 +324,7 @@ export function createBAnimation(host, run, explainHost) {
     },
     destroy() {
       observer.disconnect();
+      stateView?.destroy?.();
       stage.clear();
       element.remove();
       explain.remove();

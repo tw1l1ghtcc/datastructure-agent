@@ -101,8 +101,9 @@ try {
   const desktop = await inspectRun(page);
   const choices = await page.locator('#algorithm-chapters [data-algorithm-choice]').evaluateAll(nodes =>
     nodes.map(node => node.dataset.algorithmChoice).filter(id => id !== 'custom-array'));
-  assert.equal(choices.length, 56);
-  assert.equal(new Set(choices).size, 56);
+  assert.equal(choices.length, 57);
+  assert.equal(new Set(choices).size, choices.length);
+  assert.ok(choices.includes('kmp') && choices.includes('kmp-nextval'));
   for (const id of choices.filter(id => id !== 'binary-search')) {
     try {
       await runDemo(page, base, id);
@@ -111,7 +112,7 @@ try {
       throw new Error('本步解释 · ' + id, { cause: error });
     }
   }
-  console.log('56 项内置算法的解释布局和单步切换通过。');
+  console.log(choices.length + ' 个内置入口的解释布局和单步切换通过。');
 
   await page.setViewportSize({ width: 390, height: 844 });
   await runDemo(page, base, 'binary-search');

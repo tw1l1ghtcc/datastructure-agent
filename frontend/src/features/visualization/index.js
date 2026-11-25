@@ -1,5 +1,5 @@
 import { arraySearch } from '../workbench/array-search.js';
-import { activeHeapSize, aSortDetail, aSortMarks, isASort } from './a-sort-state.js';
+import { activeHeapSize, aSortMarks, describeSortAction, isASort } from './a-sort-state.js';
 import { createExplanationPanel } from './explanation-panel.js';
 /**
  * 成员03 · 数组动画渲染（主责路径 frontend/src/features/visualization/）
@@ -67,12 +67,46 @@ export function describeStep(step) {
     const position = '第 ' + (step.stepIndex + 1) + ' 步';
     if (!step.array.length) return position + ' ｜ 空数组';
     if (step.done) return position + ' ｜ 升序结果：[' + step.array.join(', ') + ']';
+    if (step.algorithm === 'quick-sort') {
+      const { low, high, i, j } = step.variables;
+      return [position, `当前分区 [${low}, ${high}]`, i == null ? '' : `i = ${i}，j = ${j}`].filter(Boolean).join(' ｜ ');
+    }
+    if (step.algorithm === 'insertion-sort' && step.event !== 'init') {
+      const { i, j } = step.variables;
+      return [position, `第 ${i} 轮插入`, j >= 0 && step.event !== 'insert' ? `扫描下标 j = ${j}` : ''].filter(Boolean).join(' ｜ ');
+    }
+    if (step.algorithm === 'binary-insertion-sort' && step.event !== 'init') {
+      const { left, right, mid, i, j } = step.variables;
+      if (aSortMarks(step).range) {
+        return [position, `left = ${left}，right = ${right}`, mid == null ? '' : `mid = ${mid}`,
+          left > right ? '查找区间已空' : `查找范围 [${left}, ${right}]`].filter(Boolean).join(' ｜ ');
+      }
+      const target = step.event === 'found-pos' || step.event === 'move' ? `插入位置 A[${left}]` : '';
+      return [position, `第 ${i} 轮插入`, target, j == null ? '' : `移动下标 j = ${j}`].filter(Boolean).join(' ｜ ');
+    }
+    if (step.algorithm === 'heap-sort') {
+      const size = activeHeapSize(step);
+      const placed = step.array.length - size;
+      return [position, `堆区 ${size} 项`, placed ? `已就位 ${placed} 项` : ''].filter(Boolean).join(' ｜ ');
+    }
+    if (step.algorithm === 'shell-sort' && step.event !== 'init') {
+      const { gap, i } = step.variables;
+      return [position, step.event === 'gap' ? `分为 ${gap} 组` : `外层下标 i = ${i}`].join(' ｜ ');
+    }
+    if (step.algorithm === 'selection-sort' && step.event !== 'init') {
+      return [position, `第 ${step.variables.i + 1} 轮选择`, `已就位 ${aSortMarks(step).settled[1]} 项`].join(' ｜ ');
+    }
+    if (step.algorithm === 'merge-sort' && Number.isInteger(step.variables.mid)) {
+      const { low, high, mid, temp, p } = step.variables;
+      const details = step.event === 'merge' ? [`有序区间 [${low}, ${high}]`]
+        : [`左段 [${low}, ${mid}]`, `右段 [${mid + 1}, ${high}]`];
+      if (step.event === 'copy') details.push(`已写回 ${p} / ${temp.length} 项`);
+      return [position, ...details].join(' ｜ ');
+    }
     const { focus, range } = aSortMarks(step);
     const cells = focus.map(index => 'A[' + index + ']=' + step.array[index]).join('、');
     const bounds = range?.every(Number.isInteger) ? '当前区间 ' + range.join('～') : '';
-    const auxiliary = step.algorithm === 'heap-sort' ? '有效堆 ' + activeHeapSize(step) + ' 项'
-      : step.algorithm === 'merge-sort' ? '临时区 ' + step.variables.temp.length + ' 项' : aSortDetail(step);
-    const details = [bounds, cells, auxiliary].filter(Boolean);
+    const details = [bounds, cells].filter(Boolean);
     return [position, ...(details.length ? details : ['元素数量 ' + step.array.length])].join(' ｜ ');
   }
   /* 自定义代码（插桩追踪）用的是"行号 + 本步动的格子"这套语义，没有 left/right/mid。
@@ -126,7 +160,8 @@ export function describeStep(step) {
  */
 export function describeTransition(previous, current) {
   if (!current) return '';
-  if (arraySearch(current.algorithm) || isASort(current.algorithm)) return current.description;
+  if (isASort(current.algorithm)) return describeSortAction(current);
+  if (arraySearch(current.algorithm)) return current.description;
   if (current.algorithm === 'bubble-sort' || current.algorithm === 'custom-array') return current.description;
   /* 自定义代码：只说"第几步、哪一行"，不要编 left/right */
   if (current.algorithm === 'custom-engine') {

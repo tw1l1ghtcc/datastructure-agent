@@ -1,6 +1,7 @@
 const sequence = list => list.join(' → ') || '空';
 const change = (before, after) => before === after ? String(after) : before + ' → ' + after;
-const listChange = (before, after) => change(sequence(before ?? []), sequence(after));
+const arrayText = values => '[' + (values ?? []).join('、') + ']';
+const listChange = (before, after) => change(arrayText(before), arrayText(after));
 
 export function describeGraphStep(run, step) {
   const { variables: state, event, description: action, done } = step;

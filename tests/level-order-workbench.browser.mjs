@@ -10,6 +10,19 @@ const server = spawn(process.execPath, ['backend/src/server.js'], {
   env: { ...process.env, PORT: '0', HOST: '127.0.0.1', AGENT_MOCK: 'true', RATE_LIMIT: 'false' },
   windowsHide: true
 });
+async function assertSlide(page, button, leaving, sign) {
+  const move = await page.locator(button).evaluate((control, leaving) => {
+    control.click();
+    const selector = leaving ? '.b-traversal-exits > .b-traversal-cell' : '.b-traversal-cells > .b-traversal-cell';
+    const tile = document.querySelector('.g-level-order-state ' + selector);
+    const frames = tile?.getAnimations()[0]?.effect.getKeyframes();
+    const edge = leaving ? frames?.at(-1)?.transform : frames?.[0]?.transform;
+    return { label: tile?.textContent, offset: Number(edge?.match(/translateX\(([-\d.]+)px\)/)?.[1]) };
+  }, leaving);
+  assert.equal(move.label, 'A第 1 层');
+  assert.equal(Math.sign(move.offset), sign);
+}
+
 let browser;
 try {
   const base = await new Promise((resolve, reject) => {
@@ -36,17 +49,25 @@ try {
   const response=await pending;assert.equal(response.status(),200);
   const run=await response.json();assert.deepEqual(run.result,['A','B','C','D']);
   await page.locator('#tree-edit').waitFor();
+  const state = page.locator('.g-level-order-state');
+  const queueCells = state.locator('.b-traversal-cells > li');
+  const levels = state.locator('.g-level-order-levels > li');
+  assert.equal(await state.locator('table').count(), 0);
   for(let index=0;index<run.steps.length;index++){
     if(index)await page.click('#nextBtn');
     assert.equal(await page.locator('#code-lines .active').getAttribute('data-line-id'),run.steps[index].lineId);
-    const tables=page.locator('.level-order-tables table');
-    assert.equal(await tables.count(),2);
-    const queue=await tables.first().locator('tbody tr').evaluateAll(rows=>rows.map(row=>[row.cells[0].textContent,Number(row.cells[1].textContent)]));
-    assert.deepEqual(queue,run.steps[index].variables.queue.map(entry=>[entry.id,entry.level]));
+    const { queue, levels: visited } = run.steps[index].variables;
+    assert.deepEqual(await queueCells.locator('.g-level-order-node').allTextContents(), queue.map(entry => entry.id));
+    assert.deepEqual(await queueCells.locator('.g-level-order-level').allTextContents(), queue.map(entry => '第 ' + entry.level + ' 层'));
+    assert.deepEqual(await levels.evaluateAll(rows => rows.map(row => [...row.querySelectorAll('.g-level-order-visited > li')]
+      .map(node => node.textContent))), visited);
   }
-  assert.match(await page.locator('.level-order-tables').innerText(),/B → C/);
-  await page.click('#prevBtn');
   await page.click('#resetBtn');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await assertSlide(page, '#nextBtn', false, 1);
+  await assertSlide(page, '#nextBtn', true, -1);
+  await assertSlide(page, '#prevBtn', false, -1);
+  await assertSlide(page, '#prevBtn', true, 1);
   assert.equal(await page.locator('#varValue').innerText(),'空');
   const answer=await page.request.post(base+'/api/agent/explain',{
     data:{runId:run.runId,stepIndex:2,question:'为什么出队？',hintLevel:2}
@@ -57,7 +78,7 @@ try {
   await page.getByLabel('D 的左孩子',{exact:true}).selectOption('A');
   await page.click('#startBtn');
   await page.waitForFunction(()=>document.querySelector('#msgBox').textContent.includes('环或被重复引用'));
-  assert.equal(await page.locator('.level-order-tables').count(),1);
+  assert.equal(await state.count(), 1);
   await page.getByLabel('D 的左孩子',{exact:true}).selectOption('');
   await page.click('#tree-back');await page.fill('#tree-nodes','Solo');await page.click('#tree-next');
   await page.selectOption('#tree-root','Solo');
@@ -72,6 +93,8 @@ try {
   await page.locator('#tree-edit').waitFor();
   await page.click('[data-t="last"]');
   assert.match(await page.locator('[data-explain-host]').innerText(),/空树/);
+  assert.equal(await queueCells.count(), 0);
+  assert.equal(await levels.count(), 0);
   await selectWorkbenchAlgorithm(page,'binary-search');await page.click('#fillDemo');await page.click('#startBtn');
   await page.locator('#code-lines [data-line-id="init-left"].active').waitFor();
   assert.deepEqual(errors,[]);

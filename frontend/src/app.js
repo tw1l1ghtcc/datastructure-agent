@@ -16,6 +16,7 @@ import { arraySearch } from './features/workbench/array-search.js';
 import { createAlgorithmMenu } from './features/workbench/algorithm-menu.js';
 import { graphAlgorithm } from './features/workbench/graph-algorithms.js';
 import { parseInput, validateRun } from './features/workbench/input.js';
+import { activeHeapSize, describeSortAction, selectionCandidate } from './features/visualization/a-sort-state.js';
 import { describeStep } from './features/visualization/index.js';
 import { createVizWindow } from './features/visualization/window.js';
 import { isPlus, buildPlusRun, plusCase } from './features/visualization/ext/plus-bridge.js';
@@ -196,11 +197,13 @@ function render(state) {
     } else if (run.algorithm === 'shell-sort') {
       values = [v.gap ?? '—', v.i ?? '—', v.j ?? '—', v.temp ?? '—'];
     } else if (run.algorithm === 'selection-sort') {
-      values = [v.i ?? '—', v.j ?? '—', v.minIndex ?? '—', v.minIndex !== null ? step.array[v.minIndex] : '—'];
+      const candidate = selectionCandidate(step);
+      const scanning = step.event === 'compare' || step.event === 'update-min';
+      values = [candidate ? v.i : '—', scanning ? v.j : '—', candidate?.index ?? '—', candidate?.value ?? '—'];
     } else if (run.algorithm === 'quick-sort') {
       values = [v.low ?? '—', v.high ?? '—', v.i ?? '—', v.j ?? '—'];
     } else if (run.algorithm === 'heap-sort') {
-      values = [v.heapSize ?? '—', v.i ?? '—', v.largest ?? '—', v.l !== null ? `${v.l}/${v.r}` : '—'];
+      values = [activeHeapSize(step), v.i ?? '—', v.largest ?? '—', v.l !== null ? `${v.l}/${v.r}` : '—'];
     } else if (run.algorithm === 'merge-sort') {
       values = [v.low ?? '—', v.high ?? '—', v.k ?? '—', v.temp?.length ?? 0];
     } else {
@@ -215,8 +218,8 @@ function render(state) {
   /* 合并（PR #66 §1）：图/G/C/并查集、排序、plus 示例都优先用 step 自带的说明 */
   $('step-description').textContent = run.graph ? step.description
     : run.plus ? String(step.note || step.event || '')
-      : (structuredInput() || SORT_ALGORITHMS.includes(run.algorithm)) ? step.description
-        : describeStep(step);
+      : SORT_ALGORITHMS.includes(run.algorithm) ? describeSortAction(step)
+        : structuredInput() ? step.description : describeStep(step);
   const activeId = displayLineId(run.algorithm, step.lineId);
   for(const [lineId,node] of sourceNodes){
     const active=lineId===activeId;
@@ -296,7 +299,8 @@ async function start(event) {
         message('引擎模式不支持这段代码（' + engineError.message + '），已回退到极简模式。', true);
       }
     } else {
-      result = validateRun(await createRun(input, controller.signal, algorithm), algorithm);
+      const runAlgorithm = selectedC()?.runAlgorithm ?? algorithm;
+      result = validateRun(await createRun(input, controller.signal, runAlgorithm), runAlgorithm);
     }
     if(ticket!==generation)return;
     if (structured) clearRun({ keepRequest: true });

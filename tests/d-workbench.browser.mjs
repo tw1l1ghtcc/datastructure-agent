@@ -95,8 +95,18 @@ try {
       assert.equal(await page.locator('.bsviz-caption').textContent(), run.steps[step].description);
       await checkFrame(animation, run.steps[step]);
     }
-    assert.match(await view.innerText(),/查询结果/);
-    assert.equal(await view.locator('[data-found="true"]').count(),1,id);
+    const foundStep = run.steps.at(-1);
+    const resultText = await page.locator('[data-explain-host] .bsviz-caption').textContent();
+    assert.equal(await view.locator('caption', { hasText: '查询结果' }).count(), 0, id);
+    if (tree) {
+      assert.deepEqual(await view.locator('caption').allTextContents(), ['本步状态']);
+      assert.ok(resultText.includes('找到 ' + foundStep.variables.searchResult), id);
+      const found = primitive(animation.locator('[data-avc-svg="d-tree"]'), 'n-k' + foundStep.variables.searchResult);
+      assert.equal(await found.locator('circle').getAttribute('stroke'), '#0a6b4a');
+    } else {
+      assert.ok(resultText.includes((id === 'hash-chaining' ? '返回桶号 ' : '返回 ') + foundStep.variables.searchResult), id);
+      assert.equal(await view.locator('[data-found="true"]').count(),1,id);
+    }
     if(!tree && id!=='hash-chaining') {
       const slots=await view.locator('table').first().locator('tbody tr').evaluateAll(rows=>rows.map(row=>row.cells[1].textContent));
       assert.deepEqual(slots,run.result.map(value=>value===null?'空':String(value)));
@@ -117,6 +127,17 @@ try {
     await page.click('#startBtn');
     assert.equal((await (await buildPending).json()).steps.at(-1).event,'done');
     await page.locator('#c-edit').waitFor();
+    await page.click('#c-edit');
+    await page.fill(tree ? '#c-queries' : '#d-target', '12345');
+    const missingPending = page.waitForResponse(response => response.url().endsWith('/api/algorithms/' + id + '/runs'));
+    await page.click('#startBtn');
+    const missing = (await (await missingPending).json()).steps.at(-1);
+    assert.equal(missing.event, 'not-found', id);
+    await page.locator('#c-edit').waitFor();
+    await page.click('[data-t="last"]');
+    const missingText = await page.locator('[data-explain-host] .bsviz-caption').textContent();
+    assert.ok(missingText.includes(tree ? '未找到 12345' : '返回 -1'), id);
+    assert.equal(await view.locator('caption', { hasText: '查询结果' }).count(), 0, id);
   }
   for(const id of ['hash-quadratic-probing','hash-double-hashing']){
     await selectWorkbenchAlgorithm(page,id);await page.click('#fillDemo');await page.fill('#c-param','4');
